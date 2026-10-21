@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import os
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -146,12 +147,18 @@ def _apply_tone_sandhi(
     return adjusted
 
 
-def generate_study_fields(lines: list[str]) -> list[dict[str, str]]:
+def generate_study_fields(
+    lines: list[str],
+    pronunciations: list[str] | None = None,
+) -> list[dict[str, str]]:
     """Generate add-on-compatible pinyin, ruby, and dictionary gloss HTML."""
+    if pronunciations is not None and len(pronunciations) != len(lines):
+        raise ValueError("Provide one pronunciation override per vocabulary word.")
+
     with _engine_lock:
         hanzi, transcribe, color, translate, util = _get_engine()
         generated: list[dict[str, str]] = []
-        for sentence in lines:
+        for index, sentence in enumerate(lines):
             cleaned = util.cleanup(sentence)
             source_words = hanzi.split_hanzi(cleaned)
             reading_parts = transcribe.transcribe(source_words, "pinyin", "simp")
@@ -170,6 +177,35 @@ def generate_study_fields(lines: list[str]) -> list[dict[str, str]]:
             reading = color.colorize(adjusted_parts, "pinyin")
             ruby_syllables = syllables
             ruby = color.colorize_fuse(characters, ruby_syllables, ruby=True)
+            pronunciation = pronunciations[index] if pronunciations is not None else ""
+            if pronunciation:
+                if not re.fullmatch(r"(?:[a-züv]+[1-5])+", pronunciation, re.IGNORECASE):
+                    raise ValueError(
+                        f"Pronunciation override for {sentence!r} must use numbered pinyin, "
+                        "for example yue4du2."
+                    )
+                override_syllables = transcribe.split_transcript(
+                    pronunciation.lower(), "pinyin", grouped=False
+                )
+                if len(override_syllables) != len(characters):
+                    raise ValueError(
+                        f"Pronunciation override for {sentence!r} has "
+                        f"{len(override_syllables)} syllables but the word has "
+                        f"{len(characters)} characters."
+                    )
+                if any(
+                    not re.fullmatch(r"[a-züv]+[1-5]", syllable, re.IGNORECASE)
+                    for syllable in override_syllables
+                ):
+                    raise ValueError(
+                        f"Pronunciation override for {sentence!r} contains invalid numbered pinyin."
+                    )
+                accented_syllables = transcribe.accentuate(
+                    override_syllables, "pinyin"
+                )
+                ruby = color.colorize_fuse(
+                    characters, accented_syllables, ruby=True
+                )
             gloss = translate.translate(cleaned, "en")
             generated.append({"reading": reading, "ruby": ruby, "dictionary_gloss": gloss})
         return generated

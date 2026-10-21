@@ -36,6 +36,13 @@ class TranslationRequest(BaseModel):
 
 class StudyFieldsRequest(BaseModel):
     lines: list[str] = Field(min_length=1, max_length=MAX_LINES)
+    vocabulary: list[str] = Field(default_factory=list, max_length=MAX_LINES)
+    pronunciations: list[str] = Field(default_factory=list, max_length=MAX_LINES)
+
+
+class VocabularyFieldsRequest(BaseModel):
+    words: list[str] = Field(min_length=1, max_length=MAX_LINES)
+    pronunciations: list[str] = Field(default_factory=list, max_length=MAX_LINES)
 
 
 class AlignmentRequest(BaseModel):
@@ -51,10 +58,14 @@ class DialogueLine(BaseModel):
     reading: str = Field(default="", max_length=250_000)
     ruby: str = Field(default="", max_length=250_000)
     dictionary_gloss: str = Field(default="", max_length=500_000)
+    Word: str = Field(default="", max_length=25_000)
+    WordDef: str = Field(default="", max_length=500_000)
+    WordRuby: str = Field(default="", max_length=250_000)
 
 
 class ExportManifest(BaseModel):
     title: str = Field(default="dialogue", max_length=120)
+    source_folder: str = Field(default="", max_length=500)
     duration: float = Field(gt=0)
     lines: list[DialogueLine] = Field(min_length=1, max_length=MAX_LINES)
 
@@ -100,10 +111,25 @@ def translate(request: TranslationRequest) -> dict[str, list[str]]:
 def generate_line_study_fields(
     request: StudyFieldsRequest,
 ) -> dict[str, list[dict[str, str]]]:
+    if request.pronunciations and len(request.pronunciations) != len(request.vocabulary):
+        raise HTTPException(
+            status_code=422,
+            detail="Provide one pronunciation override per vocabulary word.",
+        )
     try:
         fields = generate_study_fields(request.lines)
+        vocabulary_fields = (
+            generate_study_fields(
+                request.vocabulary,
+                request.pronunciations or [""] * len(request.vocabulary),
+            )
+            if request.vocabulary
+            else []
+        )
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
     if len(fields) != len(request.lines) or any(
         not isinstance(item, dict)
@@ -112,12 +138,48 @@ def generate_line_study_fields(
             for field in ("reading", "ruby", "dictionary_gloss")
         )
         for item in fields
+    ) or len(vocabulary_fields) != len(request.vocabulary) or any(
+        not isinstance(item, dict) or not isinstance(item.get("ruby"), str)
+        for item in vocabulary_fields
     ):
         raise HTTPException(
             status_code=500,
-            detail="The Chinese Support engine must return reading, ruby, and gloss for every line.",
+            detail="The Chinese Support engine must return reading, ruby, and gloss for every line and ruby for every vocabulary item.",
         )
-    return {"lines": fields}
+    return {
+        "lines": fields,
+        "vocabulary": [{"ruby": item["ruby"]} for item in vocabulary_fields],
+    }
+
+
+@app.post("/api/vocabulary-fields")
+def generate_vocabulary_fields(
+    request: VocabularyFieldsRequest,
+) -> dict[str, list[dict[str, str]]]:
+    if request.pronunciations and len(request.pronunciations) != len(request.words):
+        raise HTTPException(
+            status_code=422,
+            detail="Provide one pronunciation override per vocabulary word.",
+        )
+    try:
+        fields = generate_study_fields(
+            request.words,
+            request.pronunciations or [""] * len(request.words),
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    if len(fields) != len(request.words) or any(
+        not isinstance(item, dict) or not isinstance(item.get("ruby"), str)
+        for item in fields
+    ):
+        raise HTTPException(
+            status_code=500,
+            detail="The Chinese Support engine must return ruby for every vocabulary item.",
+        )
+    return {"words": [{"ruby": item["ruby"]} for item in fields]}
 
 
 @app.post("/api/align")
@@ -185,6 +247,13 @@ async def export_dialogue(
         raise HTTPException(status_code=422, detail="The selected MP3 file is empty.")
 
     ffmpeg = _ffmpeg_path()
+    audio_stem = _safe_title(Path(audio.filename or "dialogue.mp3").stem)
+    source_folder = data.source_folder.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    clip_prefix = (
+        f"{_safe_title(source_folder)}-{audio_stem}"
+        if source_folder
+        else audio_stem
+    )
     archive_buffer = io.BytesIO()
     with tempfile.TemporaryDirectory(prefix="dialogue-workshop-") as temp_dir:
         temp_path = Path(temp_dir)
@@ -194,7 +263,7 @@ async def export_dialogue(
 
         with zipfile.ZipFile(archive_buffer, "w", zipfile.ZIP_DEFLATED) as archive:
             for index, line in enumerate(data.lines, start=1):
-                clip_name = f"line-{index:03}.mp3"
+                clip_name = f"{clip_prefix}-line-{index:03}.mp3"
                 clip_path = temp_path / clip_name
                 command = [
                     ffmpeg,
@@ -236,12 +305,13 @@ async def export_dialogue(
                     {
                         "number": index,
                         "sentence": line.sentence,
-                        "start": line.start,
-                        "end": line.end,
                         "gloss": line.gloss,
                         "reading": line.reading,
                         "ruby": line.ruby,
                         "dictionary_gloss": line.dictionary_gloss,
+                        "Word": line.Word,
+                        "WordDef": line.WordDef,
+                        "WordRuby": line.WordRuby,
                         "clip": clip_name,
                     }
                 )
@@ -249,7 +319,13 @@ async def export_dialogue(
             dialogue = {
                 "title": data.title,
                 "duration": data.duration,
-                "lines": exported_lines,
+                "lines": [
+                    {
+                        key: value
+                        for key, value in line.items()
+                    }
+                    for line in exported_lines
+                ],
             }
             archive.writestr(
                 "dialogue.json",
@@ -262,12 +338,13 @@ async def export_dialogue(
                 fieldnames=[
                     "number",
                     "sentence",
-                    "start",
-                    "end",
                     "gloss",
                     "reading",
                     "ruby",
                     "dictionary_gloss",
+                    "Word",
+                    "WordDef",
+                    "WordRuby",
                     "clip",
                 ],
             )

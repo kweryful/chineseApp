@@ -43,7 +43,7 @@ def translate_local(hanzi, lang):
 def translate_gloss(hanzi, lang):
     '''Return a gloss for a sentence'''
 
-    words = split_hanzi(hanzi)
+    words = split_hanzi(hanzi, cut_all=True)
     return '<hr>'.join(remove_empty([translate_local(word, lang) for word in words]))
 
 def translate(hanzi, lang):

@@ -1,3 +1,4 @@
+import re
 import sys
 from types import ModuleType, SimpleNamespace
 import unittest
@@ -5,9 +6,18 @@ from unittest.mock import patch
 
 import glossing
 import study_fields
+from third_party.anki_chinese_support_3.chinese.hanzi import split_hanzi
 
 
 class TranslationTests(unittest.TestCase):
+    def test_full_cut_is_used_for_gloss_terms_but_not_reading_segments(self) -> None:
+        reading_segments = split_hanzi("来得及")
+        gloss_segments = split_hanzi("其实我考得也不怎么样。", cut_all=True)
+
+        self.assertEqual(reading_segments, ["来得及"])
+        self.assertIn("考", gloss_segments)
+        self.assertIn("考得", split_hanzi("其实我考得也不怎么样。"))
+
     def test_translates_each_line_in_input_order(self) -> None:
         class Translation:
             def translate(self, text: str) -> str:
@@ -39,6 +49,71 @@ class TranslationTests(unittest.TestCase):
             ),
             ["yì", "bān"],
         )
+
+    def test_manual_numbered_pinyin_overrides_vocabulary_ruby(self) -> None:
+        hanzi = SimpleNamespace(
+            split_hanzi=lambda text, grouped=True: [text] if grouped else list(text)
+        )
+        transcribe = SimpleNamespace(
+            transcribe=lambda _words, _target, _type: ["xuè"],
+            split_transcript=lambda text, _target, grouped=False: (
+                ["xuè"]
+                if text == "xuè"
+                else re.findall(r"[a-züv]+[1-5]", text, flags=re.IGNORECASE)
+            ),
+            tone_number=lambda _syllable: "4",
+            no_tone=lambda _syllable: "xue",
+            accentuate=lambda syllables, _target: [
+                {"xue4": "xuè", "xie3": "xiě"}[syllable]
+                for syllable in syllables
+            ],
+        )
+        color = SimpleNamespace(
+            colorize=lambda _parts, _target: "",
+            colorize_fuse=lambda _chars, syllables, ruby=False: (
+                f"<ruby>血<rt>{syllables[0]}</rt></ruby>" if ruby else ""
+            ),
+        )
+        translate = SimpleNamespace(translate=lambda _text, _target: "blood")
+        util = SimpleNamespace(cleanup=lambda text: text)
+
+        with patch.object(
+            study_fields,
+            "_get_engine",
+            return_value=(hanzi, transcribe, color, translate, util),
+        ):
+            generated = study_fields.generate_study_fields(["血"], ["xie3"])
+
+        self.assertEqual(generated[0]["ruby"], "<ruby>血<rt>xiě</rt></ruby>")
+
+    def test_manual_numbered_pinyin_requires_one_syllable_per_character(self) -> None:
+        hanzi = SimpleNamespace(
+            split_hanzi=lambda text, grouped=True: [text] if grouped else list(text)
+        )
+        transcribe = SimpleNamespace(
+            transcribe=lambda _words, _target, _type: ["xuè"],
+            split_transcript=lambda text, _target, grouped=False: (
+                ["xuè"]
+                if text == "xuè"
+                else re.findall(r"[a-züv]+[1-5]", text, flags=re.IGNORECASE)
+            ),
+            tone_number=lambda _syllable: "4",
+            no_tone=lambda _syllable: "xue",
+            accentuate=lambda syllables, _target: syllables,
+        )
+        color = SimpleNamespace(
+            colorize=lambda _parts, _target: "",
+            colorize_fuse=lambda _chars, _syllables, ruby=False: "",
+        )
+        translate = SimpleNamespace(translate=lambda _text, _target: "blood")
+        util = SimpleNamespace(cleanup=lambda text: text)
+
+        with patch.object(
+            study_fields,
+            "_get_engine",
+            return_value=(hanzi, transcribe, color, translate, util),
+        ), self.assertRaisesRegex(ValueError, "has 2 syllables but the word has 1 characters"):
+            study_fields.generate_study_fields(["血"], ["xue4xie3"])
 
     def test_downloads_chinese_english_model_once_when_not_installed(self) -> None:
         installed = False

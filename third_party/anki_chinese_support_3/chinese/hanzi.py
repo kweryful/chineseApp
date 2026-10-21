@@ -52,13 +52,13 @@ def get_hanzi(note):
     return cleanup(get_first(config['fields']['hanzi'], note))
 
 
-def split_hanzi(hanzi, grouped=True):
+def split_hanzi(hanzi, grouped=True, cut_all=False):
     assert isinstance(hanzi, str)
 
     if len(hanzi.split()) > 1:
         separated = remove_empty(split('([ ,.，。])', hanzi))
     else:
-        separated = list(cut(hanzi))
+        separated = list(cut(hanzi, cut_all=cut_all))
 
     if grouped:
         return separated
