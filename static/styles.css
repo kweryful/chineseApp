@@ -49,7 +49,7 @@ button { cursor: pointer; }
 .topbar-note, .quiet, .hint, .optional { color: var(--muted); font-size: 12px; }
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 285px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   align-items: start;
   gap: 0 24px;
   width: min(1600px, calc(100% - 36px));
@@ -159,9 +159,9 @@ audio { display: none; }
 .line-number { display: grid; width: 27px; height: 27px; place-items: center; color: #636b74; background: #f2f5f3; border-radius: 7px; font-size: 10px; font-weight: 700; }
 .line-content { min-width: 0; }
 .sentence-wrap { position: relative; min-width: 0; min-height: 41px; overflow: hidden; border-radius: 7px; background: #fbfcfb; }
-.sentence-wrap.has-vocabulary { background: #dce8fa; box-shadow: inset 0 0 0 1px #b5c9e8; }
+.sentence-wrap.has-vocabulary { background: #e3ecf8; box-shadow: inset 0 0 0 1px #d1dff5; }
 .sentence-highlight { position: absolute; z-index: 0; inset: 0; overflow: hidden; padding: 7px 9px; color: var(--ink); border: 1px solid transparent; border-radius: 7px; white-space: pre-wrap; overflow-wrap: break-word; font-family: "Segoe UI", sans-serif; font-size: 15px; line-height: 1.5; pointer-events: none; }
-.new-vocab-highlight { color: #172f56; background: #b8cff2; border-radius: 3px; font-weight: 700; }
+.new-vocab-highlight { color: #172f56; background: #b8cff2; border-radius: 3px; margin-left: 5px; margin-right: 5px; padding-right: 2px; padding-left: 2px; }
 .sentence { position: relative; z-index: 1; min-height: 41px; padding: 7px 9px; resize: vertical; color: transparent; background: transparent; font-size: 15px; line-height: 1.5; caret-color: var(--ink); }
 .sentence::placeholder { color: #a8b1b3; }
 .sentence::selection { background: rgba(79, 117, 174, .3); }
@@ -214,7 +214,7 @@ audio { display: none; }
 .status.error { color: #8a3b34; background: #fff0ee; }
 .status.success { color: #283164; background: #e8edf4; }
 footer { padding: 9px 0 0; color: #8b8e96; text-align: center; font-size: 10px; }
-hr { border: 0; border-top: 1px solid #ccc; }
+hr { border: 0; border-top: 1px solid #ddd; }
 
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
