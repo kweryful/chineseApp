@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dialogue Workshop</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">Dialogue <span>Workshop</span></a>
+      <span class="topbar-note">A workspace for learning through dialogue</span>
+    </header>
+
+    <main class="layout">
+      <section class="intro">
+        <div class="eyebrow">CHINESE LISTENING WORKFLOW</div>
+        <h1>Turn a dialogue into<br>your own listening lesson.</h1>
+        <p>Bring your text and audio together, time each line, add English translations, and export ready-to-study clips.</p>
+      </section>
+
+      <section class="panel setup-panel" aria-labelledby="setup-title">
+        <div class="section-heading">
+          <div>
+            <div class="step-label">STEP 01</div>
+            <h2 id="setup-title">Add your dialogue</h2>
+          </div>
+          <span class="quiet">Text + MP3</span>
+        </div>
+        <label class="field-label" for="dialogue-title">Dialogue name <span class="optional">optional</span></label>
+        <input id="dialogue-title" class="text-input" type="text" maxlength="120" placeholder="e.g. At the train station">
+        <label class="field-label" for="dialogue-text">Dialogue text <span class="hint">Speaker turns are split into sentences automatically</span></label>
+        <textarea id="dialogue-text" rows="5" placeholder="你好！&#10;你要去哪儿？&#10;我想去火车站。"></textarea>
+        <div class="upload-row">
+          <label class="upload-control" for="audio-file">
+            <span class="upload-icon">↑</span>
+            <span><strong>Choose dialogue MP3</strong><small id="audio-name">No audio selected</small></span>
+            <input id="audio-file" type="file" accept=".mp3,audio/mpeg">
+          </label>
+          <button id="auto-sync-button" class="button button-primary" type="button">Prepare &amp; auto-sync <span aria-hidden="true">✦</span></button>
+        </div>
+      </section>
+
+      <section id="editor" class="panel editor-panel hidden" aria-labelledby="editor-title">
+        <div class="section-heading">
+          <div>
+            <div class="step-label">STEP 02</div>
+            <h2 id="editor-title">Sync and translate each line</h2>
+          </div>
+          <div class="editor-actions">
+            <span id="line-count" class="count-badge">0 lines</span>
+          </div>
+        </div>
+        <div class="audio-workspace">
+          <div class="audio-toolbar">
+            <div>
+              <strong id="loaded-audio-title">Dialogue audio</strong>
+              <span id="audio-duration" class="quiet">Load an MP3 to get started</span>
+            </div>
+            <audio id="audio-player" controls preload="metadata"></audio>
+          </div>
+          <div class="waveform-wrap">
+            <canvas id="waveform" aria-label="Audio waveform. Click to seek."></canvas>
+            <div id="waveform-empty" class="waveform-empty">Your audio waveform will appear here</div>
+          </div>
+          <div class="sync-tip"><span class="tip-dot"></span>Drag across a line waveform to set its start and end. The waveform includes extra audio around the current selection; click to listen.</div>
+        </div>
+        <div class="line-list-heading">
+          <h3>Dialogue lines</h3>
+          <button id="gloss-button" class="button button-subtle" type="button">Generate English translations <span aria-hidden="true">↗</span></button>
+        </div>
+        <div id="line-list" class="line-list"></div>
+        <div class="export-row">
+          <div>
+            <strong>Ready to make your clips?</strong>
+            <span id="export-hint">Drag across a waveform to set a start and end time for every line.</span>
+          </div>
+          <button id="export-button" class="button button-primary" type="button" disabled>Export line clips <span aria-hidden="true">↓</span></button>
+        </div>
+      </section>
+
+      <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+      <footer>Audio and dialogue text stay on your computer. Speech and translation models download locally on first use.</footer>
+    </main>
+    <script src="/static/app.js?v=7" defer></script>
+  </body>
+</html>
