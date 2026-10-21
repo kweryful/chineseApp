@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dialogue Workshop</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=1">
-    <link rel="stylesheet" href="/static/styles.css?v=21">
+    <link rel="stylesheet" href="/static/styles.css?v=28">
   </head>
   <body>
     <!-- <header class="topbar">
@@ -62,13 +62,15 @@
               <audio id="audio-player" preload="metadata"></audio>
             </div>
             <div class="waveform-wrap">
-              <canvas id="waveform" aria-label="Full dialogue waveform overview. Set timing on individual line waveforms below."></canvas>
+              <canvas id="waveform" tabindex="0" role="button" aria-label="Full dialogue waveform overview. Press Space to play or pause. Set timing on individual line waveforms below."></canvas>
               <div id="waveform-empty" class="waveform-empty">Your audio waveform will appear here</div>
+            </div>
+            <div class="audio-seek-row">
+              <input id="audio-seek" class="audio-seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="Seek through full dialogue" disabled>
             </div>
             <div class="audio-playback-controls">
               <button id="audio-play-button" class="audio-play-button" type="button" aria-label="Play full dialogue" disabled>▶</button>
               <span id="audio-current-time" class="audio-time">0:00.00</span>
-              <input id="audio-seek" class="audio-seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="Seek through full dialogue" disabled>
               <span id="audio-total-time" class="audio-time">0:00.00</span>
             </div>
             <!-- <div class="sync-tip"><span class="tip-dot"></span>The full waveform is an overview. Set or adjust timing on each line's waveform below.</div> -->
@@ -104,10 +106,10 @@
         <div id="vocabulary-preview" class="vocabulary-preview" hidden aria-live="polite"></div>
         <button id="vocabulary-toggle" class="button button-subtle vocabulary-toggle" type="button">Show formatted vocabulary</button>
         <p class="vocabulary-help">One entry per line: word, optional numbered pinyin, then definition.</p>
-        <p class="vocabulary-help">For example, <code>血 xue4 blood</code> or <code>血 xie3 blood</code>.</p>
+        <p class="vocabulary-help">For example, <code>血 xue4 blood</code>.</p>
       </aside>
       <footer>Audio and dialogue text stay on your computer. Speech, translation and dictionary data download locally on first use.</footer>
     </main>
-    <script src="/static/app.js?v=29" defer></script>
+    <script src="/static/app.js?v=35" defer></script>
   </body>
 </html>

@@ -27,6 +27,7 @@ let dialogueHeading = null;
 let selectedLine = 0;
 let previewingLine = null;
 let pausedPreviewLine = null;
+let previewEndTime = null;
 let lineWaveformDrag = null;
 let suppressLineWaveformClick = null;
 let preparedDialogueText = null;
@@ -42,6 +43,7 @@ function playAudioFromTime(time) {
   if (!audioFile || !Number.isFinite(audioPlayer.duration)) return;
   previewingLine = null;
   pausedPreviewLine = null;
+  previewEndTime = null;
   audioPlayer.currentTime = Math.max(0, Math.min(time, audioPlayer.duration));
   updatePreviewControls();
   updateAudioControls();
@@ -181,10 +183,18 @@ function escapeHtml(text) {
 
 function vocabularyFieldsForLine(sentence, entries) {
   const matched = vocabularyForLine(sentence, entries);
+  const uniqueWords = new Set(
+    matched
+      .filter(({ word }) => lines.filter((line) => line.sentence.includes(word)).length === 1)
+      .map(({ word }) => word),
+  );
+  const exported = uniqueWords.size === 1
+    ? matched.filter(({ word }) => uniqueWords.has(word))
+    : matched;
   return {
-    Word: matched.map(({ word }) => word).join(","),
-    WordDef: matched.map(({ definition }) => escapeHtml(definition)).join("<hr>"),
-    WordRuby: matched.map(({ word }) => vocabularyRubyByWord.get(word) || "").join(","),
+    Word: exported.map(({ word }) => word).join(","),
+    WordDef: exported.map(({ definition }) => escapeHtml(definition)).join("<hr>"),
+    WordRuby: exported.map(({ word }) => vocabularyRubyByWord.get(word) || "").join(","),
   };
 }
 
@@ -201,13 +211,25 @@ function updateVocabularyIndicator(card, sentence) {
     .filter(({ word }) => word && sentence.includes(word))
     .map(({ word }) => word);
   const words = [...new Set(matches)].sort((left, right) => right.length - left.length);
+  const uniqueWords = new Set(
+    words.filter((word) => lines.filter((line) => line.sentence.includes(word)).length === 1),
+  );
   const matcher = words.length
     ? new RegExp(words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|"), "gu")
     : null;
   highlight.innerHTML = matcher
-    ? escapeHtml(sentence).replace(matcher, (word) => `<strong class="new-vocab-highlight">${word}</strong>`)
+    ? escapeHtml(sentence).replace(matcher, (word) => {
+      const uniqueClass = uniqueWords.has(word) ? " new-vocab-unique" : "";
+      return `<strong class="new-vocab-highlight${uniqueClass}">${word}</strong>`;
+    })
     : escapeHtml(sentence);
   wrapper.classList.toggle("has-vocabulary", matches.length > 0);
+}
+
+function updateVocabularyHighlights() {
+  lineList.querySelectorAll(".line-card").forEach((card, index) => {
+    updateVocabularyIndicator(card, lines[index]?.sentence || "");
+  });
 }
 
 function renderVocabularyPreview(entries) {
@@ -385,11 +407,25 @@ function renderLines() {
     sentence.rows = 1;
     sentence.setAttribute("aria-label", `Dialogue line ${index + 1}`);
     sentence.value = line.sentence;
+    let splitPosition = null;
+    let splitButton = null;
+    const updateSplitPosition = () => {
+      splitPosition = sentence.selectionStart;
+      if (splitButton) {
+        splitButton.disabled = sentence.selectionStart !== sentence.selectionEnd
+          || splitPosition <= 0
+          || splitPosition >= sentence.value.length;
+      }
+    };
     sentence.addEventListener("input", () => {
       line.sentence = sentence.value;
-      updateVocabularyIndicator(card, line.sentence);
+      updateVocabularyHighlights();
       updateExportState();
+      updateSplitPosition();
     });
+    sentence.addEventListener("click", updateSplitPosition);
+    sentence.addEventListener("keyup", updateSplitPosition);
+    sentence.addEventListener("select", updateSplitPosition);
     sentence.addEventListener("scroll", () => {
       sentenceHighlight.scrollTop = sentence.scrollTop;
       sentenceHighlight.scrollLeft = sentence.scrollLeft;
@@ -442,6 +478,27 @@ function renderLines() {
       mergeButton.addEventListener("click", () => mergeLineWithNext(index));
       controls.append(mergeButton);
     }
+    splitButton = document.createElement("button");
+    splitButton.type = "button";
+    splitButton.className = "split-line-button merge-line-button";
+    splitButton.disabled = true;
+    splitButton.setAttribute("aria-label", `Split line ${index + 1} at the text cursor`);
+    splitButton.title = "Place the text cursor where the line should split";
+    const splitIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    splitIcon.setAttribute("viewBox", "0 0 24 24");
+    splitIcon.setAttribute("aria-hidden", "true");
+    splitIcon.setAttribute("focusable", "false");
+    const splitPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    splitPath.setAttribute("d", "M4 12h5m0 0c4 0 4-6 8-6h3m-3-3 3 3-3 3m-8 3c4 0 4 6 8 6h3m-3-3 3 3-3 3");
+    splitPath.setAttribute("fill", "none");
+    splitPath.setAttribute("stroke", "currentColor");
+    splitPath.setAttribute("stroke-width", "2");
+    splitPath.setAttribute("stroke-linecap", "round");
+    splitPath.setAttribute("stroke-linejoin", "round");
+    splitIcon.append(splitPath);
+    splitButton.append(splitIcon);
+    splitButton.addEventListener("click", () => splitLineAt(index, splitPosition));
+    controls.append(splitButton);
 
     const gloss = document.createElement("textarea");
     gloss.className = "gloss-input";
@@ -592,11 +649,8 @@ function renderLines() {
       }
       const time = lineWaveformTimeAt(lineWaveform, index, event.clientX);
       lineWaveform.focus({ preventScroll: true });
-      if (validLine(line) && time >= line.start && time <= line.end) {
-        playLinePreview(index, time);
-      } else {
-        playAudioFromTime(time);
-      }
+      const range = lineWaveformRange(index);
+      playLinePreview(index, time, range.end);
     });
     lineWaveform.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -606,7 +660,7 @@ function renderLines() {
           toggleLinePreview(index);
         } else {
           const range = lineWaveformRange(index);
-          playAudioFromTime((range.start + range.end) / 2);
+          playLinePreview(index, (range.start + range.end) / 2, range.end);
         }
       }
     });
@@ -644,9 +698,7 @@ function renderLines() {
 }
 
 vocabularyInput.addEventListener("input", () => {
-  lineList.querySelectorAll(".line-card").forEach((card, index) => {
-    updateVocabularyIndicator(card, lines[index]?.sentence || "");
-  });
+  updateVocabularyHighlights();
   updateExportState();
 });
 
@@ -657,6 +709,34 @@ function selectLine(index) {
   });
   drawWaveform();
 }
+
+document.addEventListener("keydown", (event) => {
+  if (
+    (event.key !== "ArrowDown" && event.key !== "ArrowUp")
+    || event.altKey
+    || event.ctrlKey
+    || event.metaKey
+    || event.shiftKey
+  ) {
+    return;
+  }
+  const target = event.target;
+  if (
+    !(target instanceof Element)
+    || !target.closest(".line-card")
+    || target.closest("textarea, input, select, [contenteditable='true']")
+  ) {
+    return;
+  }
+  const nextIndex = selectedLine + (event.key === "ArrowDown" ? 1 : -1);
+  if (nextIndex < 0 || nextIndex >= lines.length) return;
+
+  event.preventDefault();
+  selectLine(nextIndex);
+  const nextCard = lineList.querySelectorAll(".line-card")[nextIndex];
+  nextCard.scrollIntoView({ block: "nearest" });
+  nextCard.querySelector(".line-waveform").focus({ preventScroll: true });
+});
 
 function median(values) {
   if (!values.length) return 0;
@@ -762,6 +842,58 @@ function mergeLineWithNext(index) {
   updateExportState();
   showStatus(
     `Merged lines ${index + 1} and ${index + 2}. Run Auto-sync & generate fields to refresh the timing and study fields.`,
+    "info",
+  );
+}
+
+function splitLineAt(index, position) {
+  const line = lines[index];
+  if (!line || !Number.isInteger(position)) return;
+
+  const firstSentence = line.sentence.slice(0, position).trimEnd();
+  const secondSentence = line.sentence.slice(position).trimStart();
+  if (!firstSentence || !secondSentence) {
+    showStatus("Place the cursor between two parts of the line to split it.", "error");
+    return;
+  }
+  if (previewingLine === index || pausedPreviewLine === index) stopLinePreview();
+
+  line.sentence = firstSentence;
+  line.start = null;
+  line.end = null;
+  line.gloss = "";
+  line.reading = "";
+  line.ruby = "";
+  line.dictionaryGloss = "";
+  line.confidence = null;
+  line.matched = null;
+  line.manualTiming = false;
+  line.studyFieldsOpen = false;
+  line.readingSourceMode = false;
+  line.rubySourceMode = false;
+  line.dictionaryGlossSourceMode = false;
+  lines.splice(index + 1, 0, {
+    sentence: secondSentence,
+    start: null,
+    end: null,
+    gloss: "",
+    reading: "",
+    ruby: "",
+    dictionaryGloss: "",
+    confidence: null,
+    matched: null,
+    manualTiming: false,
+    studyFieldsOpen: false,
+  });
+
+  if (previewingLine !== null && previewingLine > index) previewingLine += 1;
+  if (pausedPreviewLine !== null && pausedPreviewLine > index) pausedPreviewLine += 1;
+  selectedLine = index + 1;
+  renderLines();
+  updateExportState();
+  lineList.querySelectorAll(".sentence")[index + 1]?.focus({ preventScroll: true });
+  showStatus(
+    `Split line ${index + 1}. Run Auto-sync & generate fields to refresh the timing and study fields.`,
     "info",
   );
 }
@@ -956,9 +1088,19 @@ function updatePreviewControls() {
   });
 }
 
-function playLinePreview(index, fromTime = null) {
+function playLinePreview(index, fromTime = null, endTime = null) {
   const line = lines[index];
-  if (!audioFile || !validLine(line) || !Number.isFinite(audioPlayer.duration)) return;
+  const clipEnd = endTime ?? line?.end;
+  const startTime = fromTime ?? line?.start;
+  if (
+    !audioFile
+    || !line
+    || (!validLine(line) && endTime === null)
+    || !Number.isFinite(audioPlayer.duration)
+    || !Number.isFinite(startTime)
+    || !Number.isFinite(clipEnd)
+    || startTime >= clipEnd
+  ) return;
 
   selectedLine = index;
   document.querySelectorAll(".line-card").forEach((card, cardIndex) => {
@@ -966,11 +1108,13 @@ function playLinePreview(index, fromTime = null) {
   });
   previewingLine = index;
   pausedPreviewLine = null;
-  audioPlayer.currentTime = Math.max(line.start, Math.min(fromTime ?? line.start, line.end));
+  previewEndTime = clipEnd;
+  audioPlayer.currentTime = Math.max(0, Math.min(startTime, clipEnd));
   updatePreviewControls();
   drawWaveform();
   audioPlayer.play().catch((error) => {
     previewingLine = null;
+    previewEndTime = null;
     updatePreviewControls();
     drawWaveform();
     showStatus(`Could not play line ${index + 1}: ${error.message}`, "error");
@@ -988,6 +1132,7 @@ function toggleLinePreview(index) {
     updatePreviewControls();
     audioPlayer.play().catch((error) => {
       previewingLine = null;
+      previewEndTime = null;
       updatePreviewControls();
       drawWaveform();
       showStatus(`Could not play line ${index + 1}: ${error.message}`, "error");
@@ -1000,6 +1145,7 @@ function toggleLinePreview(index) {
 function stopLinePreview() {
   previewingLine = null;
   pausedPreviewLine = null;
+  previewEndTime = null;
   audioPlayer.pause();
   updatePreviewControls();
   drawWaveform();
@@ -1008,10 +1154,11 @@ function stopLinePreview() {
 function onAudioTimeUpdate() {
   if (previewingLine !== null) {
     const line = lines[previewingLine];
-    if (!validLine(line) || audioPlayer.currentTime >= line.end) {
-      const clipEnd = line?.end;
+    const clipEnd = previewEndTime ?? line?.end;
+    if (!line || !Number.isFinite(clipEnd) || audioPlayer.currentTime >= clipEnd) {
       previewingLine = null;
       pausedPreviewLine = null;
+      previewEndTime = null;
       audioPlayer.pause();
       if (Number.isFinite(clipEnd)) audioPlayer.currentTime = clipEnd;
     }
@@ -1034,6 +1181,7 @@ audioInput.addEventListener("change", async () => {
   audioFile = audioInput.files?.[0] ?? null;
   previewingLine = null;
   pausedPreviewLine = null;
+  previewEndTime = null;
   audioPlayer.pause();
   lines = [];
   preparedDialogueText = null;
@@ -1251,22 +1399,31 @@ audioPlayer.addEventListener("seeked", () => {
 });
 window.addEventListener("resize", drawWaveform);
 
-audioPlayButton.addEventListener("click", () => {
+function toggleFullDialoguePlayback() {
   if (!audioFile || !Number.isFinite(audioPlayer.duration)) return;
   if (audioPlayer.paused) {
     previewingLine = null;
     pausedPreviewLine = null;
+    previewEndTime = null;
     updatePreviewControls();
     audioPlayer.play().catch((error) => showStatus(`Could not play audio: ${error.message}`, "error"));
   } else {
     audioPlayer.pause();
   }
+}
+
+audioPlayButton.addEventListener("click", toggleFullDialoguePlayback);
+canvas.addEventListener("keydown", (event) => {
+  if (event.key !== " " || event.repeat) return;
+  event.preventDefault();
+  toggleFullDialoguePlayback();
 });
 
 audioSeek.addEventListener("input", () => {
   if (!Number.isFinite(audioPlayer.duration)) return;
   previewingLine = null;
   pausedPreviewLine = null;
+  previewEndTime = null;
   audioPlayer.currentTime = Number(audioSeek.value);
   updatePreviewControls();
   updateAudioControls();
