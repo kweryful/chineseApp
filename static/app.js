@@ -1,14 +1,18 @@
 const audioInput = document.querySelector("#audio-file");
 const audioPlayer = document.querySelector("#audio-player");
+const audioPlayButton = document.querySelector("#audio-play-button");
+const audioSeek = document.querySelector("#audio-seek");
+const audioCurrentTime = document.querySelector("#audio-current-time");
+const audioTotalTime = document.querySelector("#audio-total-time");
 const canvas = document.querySelector("#waveform");
 const context = canvas.getContext("2d");
 const lineList = document.querySelector("#line-list");
 const exportButton = document.querySelector("#export-button");
+const vocabularyExportButton = document.querySelector("#vocabulary-export-button");
 const autoSyncButton = document.querySelector("#auto-sync-button");
 const sourceFolderInput = document.querySelector("#source-folder-name");
 const uploadRow = document.querySelector(".upload-row");
 const editorActions = document.querySelector(".editor-actions");
-const generateFieldsButton = document.querySelector("#generate-fields-button");
 const vocabularyInput = document.querySelector("#vocabulary-input");
 const vocabularyInputLabel = document.querySelector("#vocabulary-input-label");
 const vocabularyPreview = document.querySelector("#vocabulary-preview");
@@ -22,6 +26,7 @@ let lines = [];
 let dialogueHeading = null;
 let selectedLine = 0;
 let previewingLine = null;
+let pausedPreviewLine = null;
 let lineWaveformDrag = null;
 let suppressLineWaveformClick = null;
 let preparedDialogueText = null;
@@ -36,9 +41,24 @@ function showStatus(message, kind = "info") {
 function playAudioFromTime(time) {
   if (!audioFile || !Number.isFinite(audioPlayer.duration)) return;
   previewingLine = null;
+  pausedPreviewLine = null;
   audioPlayer.currentTime = Math.max(0, Math.min(time, audioPlayer.duration));
   updatePreviewControls();
+  updateAudioControls();
   audioPlayer.play().catch((error) => showStatus(`Could not play audio: ${error.message}`, "error"));
+}
+
+function updateAudioControls() {
+  const hasDuration = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0;
+  const isPlaying = !audioPlayer.paused;
+  audioPlayButton.disabled = !audioFile || !hasDuration;
+  audioPlayButton.textContent = isPlaying ? "❚❚" : "▶";
+  audioPlayButton.setAttribute("aria-label", `${isPlaying ? "Pause" : "Play"} full dialogue`);
+  audioSeek.disabled = !audioFile || !hasDuration;
+  audioSeek.max = hasDuration ? String(audioPlayer.duration) : "0";
+  audioSeek.value = hasDuration ? String(audioPlayer.currentTime) : "0";
+  audioCurrentTime.textContent = formatTime(hasDuration ? audioPlayer.currentTime : 0);
+  audioTotalTime.textContent = formatTime(hasDuration ? audioPlayer.duration : 0);
 }
 
 function clearStatus() {
@@ -160,7 +180,7 @@ function escapeHtml(text) {
 }
 
 function vocabularyFieldsForLine(sentence, entries) {
-  const matched = entries.filter(({ word }) => sentence.includes(word));
+  const matched = vocabularyForLine(sentence, entries);
   return {
     Word: matched.map(({ word }) => word).join(","),
     WordDef: matched.map(({ definition }) => escapeHtml(definition)).join("<hr>"),
@@ -168,22 +188,26 @@ function vocabularyFieldsForLine(sentence, entries) {
   };
 }
 
+function vocabularyForLine(sentence, entries) {
+  return entries.filter(({ word }) => word && sentence.includes(word));
+}
+
 function updateVocabularyIndicator(card, sentence) {
-  const indicator = card.querySelector(".vocabulary-match");
-  if (!indicator) return;
+  const wrapper = card.querySelector(".sentence-wrap");
+  const highlight = wrapper?.querySelector(".sentence-highlight");
+  if (!wrapper || !highlight) return;
   const { entries } = parseVocabulary();
   const matches = entries
-    .filter(({ word }) => sentence.includes(word))
+    .filter(({ word }) => word && sentence.includes(word))
     .map(({ word }) => word);
-  indicator.hidden = matches.length === 0;
-  indicator.textContent = matches.length
-    ? `New vocab: ${matches.join(", ")}`
-    : "";
-  indicator.title = matches.join(", ");
-  indicator.setAttribute(
-    "aria-label",
-    matches.length ? `New vocabulary in this line: ${matches.join(", ")}` : "",
-  );
+  const words = [...new Set(matches)].sort((left, right) => right.length - left.length);
+  const matcher = words.length
+    ? new RegExp(words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|"), "gu")
+    : null;
+  highlight.innerHTML = matcher
+    ? escapeHtml(sentence).replace(matcher, (word) => `<strong class="new-vocab-highlight">${word}</strong>`)
+    : escapeHtml(sentence);
+  wrapper.classList.toggle("has-vocabulary", matches.length > 0);
 }
 
 function renderVocabularyPreview(entries) {
@@ -249,18 +273,35 @@ function validLine(line) {
   return line.start !== null && line.end !== null && line.end > line.start;
 }
 
-function allLinesTimed() {
-  return lines.length > 0 && lines.every(validLine);
+function linesForExport(entries) {
+  return lines.filter((line) => vocabularyForLine(line.sentence, entries).length > 0);
 }
 
 function updateExportState() {
-  const canExport = Boolean(audioFile && audioPlayer.duration && allLinesTimed());
-  exportButton.disabled = !canExport;
+  const { entries } = parseVocabulary();
+  vocabularyExportButton.hidden = entries.length === 0;
+  const matchingLines = linesForExport(entries);
+  const allLinesReady = Boolean(audioFile && audioPlayer.duration && lines.length && lines.every(validLine));
+  const matchingLinesReady = Boolean(
+    entries.length
+    && audioFile
+    && audioPlayer.duration
+    && matchingLines.length
+    && matchingLines.every(validLine),
+  );
+  exportButton.disabled = !allLinesReady;
+  vocabularyExportButton.disabled = !matchingLinesReady;
   document.querySelector("#export-hint").textContent = !audioFile
     ? "Choose an MP3 to continue."
-    : allLinesTimed()
-      ? "All lines are timed. Your clips are ready to export."
-      : "Drag across a waveform to set a start and end time for every line.";
+    : !lines.length
+      ? "Prepare dialogue lines before exporting."
+      : entries.length && !matchingLines.length
+        ? "No dialogue lines contain the provided vocabulary."
+        : allLinesReady
+          ? entries.length
+            ? `${lines.length} lines are ready. ${matchingLines.length} contain new vocabulary.`
+            : "All lines are timed. Your clips are ready to export."
+          : "Drag across a waveform to set a start and end time for every line to export.";
 }
 
 function sanitizeStudyHtml(html) {
@@ -335,6 +376,10 @@ function renderLines() {
     const content = document.createElement("div");
     content.className = "line-content";
 
+    const sentenceWrap = document.createElement("div");
+    sentenceWrap.className = "sentence-wrap";
+    const sentenceHighlight = document.createElement("div");
+    sentenceHighlight.className = "sentence-highlight";
     const sentence = document.createElement("textarea");
     sentence.className = "sentence";
     sentence.rows = 1;
@@ -345,13 +390,15 @@ function renderLines() {
       updateVocabularyIndicator(card, line.sentence);
       updateExportState();
     });
+    sentence.addEventListener("scroll", () => {
+      sentenceHighlight.scrollTop = sentence.scrollTop;
+      sentenceHighlight.scrollLeft = sentence.scrollLeft;
+    });
     sentence.addEventListener("focus", () => selectLine(index));
+    sentenceWrap.append(sentenceHighlight, sentence);
 
     const controls = document.createElement("div");
     controls.className = "line-controls";
-    const vocabularyIndicator = document.createElement("span");
-    vocabularyIndicator.className = "vocabulary-match";
-    controls.append(vocabularyIndicator);
     const readout = document.createElement("span");
     readout.className = "time-readout";
     readout.textContent = `${formatTime(line.start)}  →  ${formatTime(line.end)}`;
@@ -372,6 +419,28 @@ function renderLines() {
       manual.className = "match-score";
       manual.textContent = "Manual timing";
       controls.append(manual);
+    }
+    if (index < lines.length - 1) {
+      const mergeButton = document.createElement("button");
+      mergeButton.type = "button";
+      mergeButton.className = "merge-line-button";
+      mergeButton.setAttribute("aria-label", `Merge line ${index + 1} with line ${index + 2}`);
+      mergeButton.title = `Merge line ${index + 1} with line ${index + 2}`;
+      const mergeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      mergeIcon.setAttribute("viewBox", "0 0 24 24");
+      mergeIcon.setAttribute("aria-hidden", "true");
+      mergeIcon.setAttribute("focusable", "false");
+      const mergePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      mergePath.setAttribute("d", "M4 6h4c4 0 4 6 8 6h4m-4-4 4 4-4 4M4 18h4c4 0 4-6 8-6");
+      mergePath.setAttribute("fill", "none");
+      mergePath.setAttribute("stroke", "currentColor");
+      mergePath.setAttribute("stroke-width", "2");
+      mergePath.setAttribute("stroke-linecap", "round");
+      mergePath.setAttribute("stroke-linejoin", "round");
+      mergeIcon.append(mergePath);
+      mergeButton.append(mergeIcon);
+      mergeButton.addEventListener("click", () => mergeLineWithNext(index));
+      controls.append(mergeButton);
     }
 
     const gloss = document.createElement("textarea");
@@ -416,6 +485,7 @@ function renderLines() {
       const modeButton = document.createElement("button");
       modeButton.type = "button";
       modeButton.className = "study-field-mode";
+      modeButton.tabIndex = -1;
       const sourceMode = `${field}SourceMode`;
       modeButton.textContent = line[sourceMode] ? "Preview" : "Edit HTML";
 
@@ -480,12 +550,13 @@ function renderLines() {
     lineWaveform.setAttribute("role", "button");
     lineWaveform.setAttribute(
       "aria-label",
-      `Line ${index + 1} waveform. Drag to set clip start and end. Click to listen.`,
+      `Line ${index + 1} waveform. Drag to set clip start and end. Click to listen. Press Space to play or pause.`,
     );
     lineWaveform.setAttribute("aria-disabled", String(!audioBuffer));
     lineWaveform.addEventListener("pointerdown", (event) => {
       if (!audioBuffer || event.button !== 0) return;
       event.preventDefault();
+      lineWaveform.focus({ preventScroll: true });
       lineWaveform.setPointerCapture(event.pointerId);
       lineWaveformDrag = {
         index,
@@ -520,6 +591,7 @@ function renderLines() {
         return;
       }
       const time = lineWaveformTimeAt(lineWaveform, index, event.clientX);
+      lineWaveform.focus({ preventScroll: true });
       if (validLine(line) && time >= line.start && time <= line.end) {
         playLinePreview(index, time);
       } else {
@@ -529,8 +601,9 @@ function renderLines() {
     lineWaveform.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
+        if (event.key === " " && event.repeat) return;
         if (validLine(line)) {
-          playLinePreview(index);
+          toggleLinePreview(index);
         } else {
           const range = lineWaveformRange(index);
           playAudioFromTime((range.start + range.end) / 2);
@@ -552,7 +625,14 @@ function renderLines() {
     marker.append(number, previewButton);
     previewRow.append(lineWaveform);
 
-    content.append(sentence, previewRow, controls, studyFields);
+    content.append(sentenceWrap, previewRow, controls, studyFields);
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button, textarea, input, select, summary, a, [contenteditable='true'], canvas")) {
+        return;
+      }
+      selectLine(index);
+      lineWaveform.focus({ preventScroll: true });
+    });
     card.append(marker, content);
     lineList.append(card);
     updateVocabularyIndicator(card, line.sentence);
@@ -567,6 +647,7 @@ vocabularyInput.addEventListener("input", () => {
   lineList.querySelectorAll(".line-card").forEach((card, index) => {
     updateVocabularyIndicator(card, lines[index]?.sentence || "");
   });
+  updateExportState();
 });
 
 function selectLine(index) {
@@ -632,12 +713,56 @@ function setLineTimingFromDrag(index, start, end) {
   line.confidence = null;
   line.matched = null;
   line.manualTiming = true;
-  if (previewingLine === index) stopLinePreview();
+  if (previewingLine === index || pausedPreviewLine === index) stopLinePreview();
   selectedLine = index;
   renderLines();
+  lineList.querySelectorAll(".line-waveform")[index]?.focus({ preventScroll: true });
   showStatus(
     `Line ${index + 1} timing set to ${formatTime(line.start)}–${formatTime(line.end)}.`,
     "success",
+  );
+}
+
+function mergeLineWithNext(index) {
+  const line = lines[index];
+  const nextLine = lines[index + 1];
+  if (!line || !nextLine) return;
+
+  if (previewingLine === index || previewingLine === index + 1
+    || pausedPreviewLine === index || pausedPreviewLine === index + 1) {
+    stopLinePreview();
+  }
+
+  const combinedTiming = validLine(line) && validLine(nextLine)
+    ? {
+      start: Math.min(line.start, nextLine.start),
+      end: Math.max(line.end, nextLine.end),
+    }
+    : { start: null, end: null };
+  line.sentence = `${line.sentence.trimEnd()}${nextLine.sentence.trimStart()}`;
+  line.start = combinedTiming.start;
+  line.end = combinedTiming.end;
+  line.gloss = "";
+  line.reading = "";
+  line.ruby = "";
+  line.dictionaryGloss = "";
+  line.confidence = null;
+  line.matched = null;
+  line.manualTiming = false;
+  line.studyFieldsOpen = false;
+  line.readingSourceMode = false;
+  line.rubySourceMode = false;
+  line.dictionaryGlossSourceMode = false;
+  lines.splice(index + 1, 1);
+
+  if (previewingLine !== null && previewingLine > index + 1) previewingLine -= 1;
+  if (pausedPreviewLine !== null && pausedPreviewLine > index + 1) pausedPreviewLine -= 1;
+  selectedLine = index;
+  renderLines();
+  updateExportState();
+  showStatus(
+    `Merged lines ${index + 1} and ${index + 2}. Run Auto-sync & generate fields to refresh the timing and study fields.`,
+    "info",
   );
 }
 
@@ -840,6 +965,7 @@ function playLinePreview(index, fromTime = null) {
     card.classList.toggle("selected", cardIndex === selectedLine);
   });
   previewingLine = index;
+  pausedPreviewLine = null;
   audioPlayer.currentTime = Math.max(line.start, Math.min(fromTime ?? line.start, line.end));
   updatePreviewControls();
   drawWaveform();
@@ -851,8 +977,29 @@ function playLinePreview(index, fromTime = null) {
   });
 }
 
+function toggleLinePreview(index) {
+  if (previewingLine === index && !audioPlayer.paused) {
+    audioPlayer.pause();
+    return;
+  }
+  if (pausedPreviewLine === index && validLine(lines[index])) {
+    previewingLine = index;
+    pausedPreviewLine = null;
+    updatePreviewControls();
+    audioPlayer.play().catch((error) => {
+      previewingLine = null;
+      updatePreviewControls();
+      drawWaveform();
+      showStatus(`Could not play line ${index + 1}: ${error.message}`, "error");
+    });
+    return;
+  }
+  playLinePreview(index);
+}
+
 function stopLinePreview() {
   previewingLine = null;
+  pausedPreviewLine = null;
   audioPlayer.pause();
   updatePreviewControls();
   drawWaveform();
@@ -864,6 +1011,7 @@ function onAudioTimeUpdate() {
     if (!validLine(line) || audioPlayer.currentTime >= line.end) {
       const clipEnd = line?.end;
       previewingLine = null;
+      pausedPreviewLine = null;
       audioPlayer.pause();
       if (Number.isFinite(clipEnd)) audioPlayer.currentTime = clipEnd;
     }
@@ -885,6 +1033,7 @@ async function loadWaveform(file) {
 audioInput.addEventListener("change", async () => {
   audioFile = audioInput.files?.[0] ?? null;
   previewingLine = null;
+  pausedPreviewLine = null;
   audioPlayer.pause();
   lines = [];
   preparedDialogueText = null;
@@ -892,8 +1041,9 @@ audioInput.addEventListener("change", async () => {
   lineList.replaceChildren();
   document.querySelector("#editor").classList.add("hidden");
   uploadRow.append(autoSyncButton);
-  autoSyncButton.innerHTML = 'Prepare &amp; auto-sync <span aria-hidden="true">✦</span>';
+  autoSyncButton.innerHTML = 'Prepare, sync &amp; generate fields <span aria-hidden="true">✦</span>';
   updateExportState();
+  updateAudioControls();
   audioBuffer = null;
   if (audioUrl) URL.revokeObjectURL(audioUrl);
   if (!audioFile) return;
@@ -910,6 +1060,7 @@ audioInput.addEventListener("change", async () => {
 
   audioUrl = URL.createObjectURL(audioFile);
   audioPlayer.src = audioUrl;
+  updateAudioControls();
   document.querySelector("#audio-name").textContent = audioFile.name;
   document.querySelector("#loaded-audio-title").textContent = audioFile.name;
   document.querySelector("#waveform-empty").classList.remove("hidden");
@@ -925,6 +1076,11 @@ audioInput.addEventListener("change", async () => {
 autoSyncButton.addEventListener("click", async () => {
   if (!audioFile) {
     showStatus("Choose the dialogue MP3 before preparing and syncing lines.", "error");
+    return;
+  }
+  const { invalidLines } = parseVocabulary();
+  if (invalidLines.length) {
+    showStatus(`Add a Chinese word and its definition to vocabulary line${invalidLines.length === 1 ? "" : "s"} ${invalidLines.join(", ")}.`, "error");
     return;
   }
 
@@ -952,7 +1108,7 @@ autoSyncButton.addEventListener("click", async () => {
     document.querySelector("#editor").classList.remove("hidden");
     renderLines();
     editorActions.append(autoSyncButton);
-    autoSyncButton.innerHTML = 'Auto-sync lines <span aria-hidden="true">✦</span>';
+    autoSyncButton.innerHTML = 'Auto-sync &amp; generate fields <span aria-hidden="true">✦</span>';
     document.querySelector("#editor").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -1057,42 +1213,64 @@ autoSyncButton.addEventListener("click", async () => {
     renderLines();
     const matched = lines.filter((line) => line.matched).length;
     const missed = lines.length - matched;
-    showStatus(
-      missed
-        ? `Auto-sync matched ${matched} of ${lines.length} lines. Review the unmatched lines and drag across their waveforms to set their timings. Unspoken lesson headings and introductions are ignored.`
-        : `Auto-sync matched all ${lines.length} lines. Review the timings and text-match scores before exporting.`,
-      missed ? "info" : "success",
-    );
+    autoSyncButton.textContent = "Generating fields locally…";
+    await generateStudyFields({ matched, missed });
   } catch (error) {
     showStatus(error.message, "error");
   } finally {
     autoSyncButton.disabled = false;
-    autoSyncButton.innerHTML = 'Auto-sync lines <span aria-hidden="true">✦</span>';
+    autoSyncButton.innerHTML = 'Auto-sync &amp; generate fields <span aria-hidden="true">✦</span>';
   }
 });
 
 audioPlayer.addEventListener("loadedmetadata", () => {
   document.querySelector("#audio-duration").textContent = `Duration · ${formatTime(audioPlayer.duration)}`;
+  updateAudioControls();
   updateExportState();
   drawWaveform();
 });
-audioPlayer.addEventListener("play", updatePreviewControls);
-audioPlayer.addEventListener("pause", () => {
-  if (previewingLine !== null) previewingLine = null;
+audioPlayer.addEventListener("play", () => {
   updatePreviewControls();
+  updateAudioControls();
+});
+audioPlayer.addEventListener("pause", () => {
+  if (previewingLine !== null) {
+    pausedPreviewLine = previewingLine;
+    previewingLine = null;
+  }
+  updatePreviewControls();
+  updateAudioControls();
   drawWaveform();
 });
 audioPlayer.addEventListener("timeupdate", onAudioTimeUpdate);
-audioPlayer.addEventListener("seeked", drawWaveform);
+audioPlayer.addEventListener("timeupdate", updateAudioControls);
+audioPlayer.addEventListener("ended", updateAudioControls);
+audioPlayer.addEventListener("seeked", () => {
+  updateAudioControls();
+  drawWaveform();
+});
 window.addEventListener("resize", drawWaveform);
 
-canvas.addEventListener("click", (event) => {
-  if (!audioPlayer.duration) return;
+audioPlayButton.addEventListener("click", () => {
+  if (!audioFile || !Number.isFinite(audioPlayer.duration)) return;
+  if (audioPlayer.paused) {
+    previewingLine = null;
+    pausedPreviewLine = null;
+    updatePreviewControls();
+    audioPlayer.play().catch((error) => showStatus(`Could not play audio: ${error.message}`, "error"));
+  } else {
+    audioPlayer.pause();
+  }
+});
+
+audioSeek.addEventListener("input", () => {
+  if (!Number.isFinite(audioPlayer.duration)) return;
   previewingLine = null;
-  const rect = canvas.getBoundingClientRect();
-  audioPlayer.currentTime = ((event.clientX - rect.left) / rect.width) * audioPlayer.duration;
+  pausedPreviewLine = null;
+  audioPlayer.currentTime = Number(audioSeek.value);
   updatePreviewControls();
-  audioPlayer.play().catch((error) => showStatus(`Could not play audio: ${error.message}`, "error"));
+  updateAudioControls();
+  drawWaveform();
 });
 
 vocabularyToggle.addEventListener("click", async () => {
@@ -1148,7 +1326,7 @@ vocabularyToggle.addEventListener("click", async () => {
   }
 });
 
-generateFieldsButton.addEventListener("click", async () => {
+async function generateStudyFields({ matched, missed }) {
   if (!lines.length) {
     showStatus("Prepare the dialogue lines before generating translations and study fields.", "error");
     return;
@@ -1158,8 +1336,6 @@ generateFieldsButton.addEventListener("click", async () => {
     showStatus(`Add a Chinese word and its definition to vocabulary line${invalidLines.length === 1 ? "" : "s"} ${invalidLines.join(", ")}.`, "error");
     return;
   }
-  generateFieldsButton.disabled = true;
-  generateFieldsButton.textContent = "Generating fields locally…";
   showStatus(
     "Generating English translations, readings, ruby, and dictionary glosses locally. First use may download the local models and dictionary.",
     "info",
@@ -1214,7 +1390,7 @@ generateFieldsButton.addEventListener("click", async () => {
       lines[index].reading = fields.reading;
       lines[index].ruby = fields.ruby;
       lines[index].dictionaryGloss = fields.dictionary_gloss;
-      lines[index].studyFieldsOpen = index === 0;
+      lines[index].studyFieldsOpen = false;
     });
     studyFieldsResult.vocabulary.forEach((fields, index) => {
       if (!fields || typeof fields.ruby !== "string") {
@@ -1228,21 +1404,18 @@ generateFieldsButton.addEventListener("click", async () => {
     if (!vocabularyPreview.hidden) renderVocabularyPreview(vocabularyEntries);
     renderLines();
     showStatus(
-      vocabularyEntries.length
+      `${missed ? `Auto-sync matched ${matched} of ${lines.length} lines. Review unmatched lines and set their timings. ` : `Auto-sync matched all ${lines.length} lines. `}${vocabularyEntries.length
         ? "English translations, readings, ruby, and dictionary glosses generated locally. Matched vocabulary will be included in the line export."
-        :         "English translations, readings, ruby, and dictionary glosses generated locally. Expand each line to review or edit its fields.",
-      "success",
+        : "English translations, readings, ruby, and dictionary glosses generated locally. Expand each line to review or edit its fields."}`,
+      missed ? "info" : "success",
     );
   } catch (error) {
     showStatus(error.message, "error");
-  } finally {
-    generateFieldsButton.disabled = false;
-    generateFieldsButton.innerHTML = 'Generate translations &amp; study fields <span aria-hidden="true">↗</span>';
   }
-});
+}
 
-exportButton.addEventListener("click", async () => {
-  if (!audioFile || !allLinesTimed()) return;
+async function exportDialogue(vocabularyOnly) {
+  if (!audioFile) return;
   const { entries: vocabularyEntries, invalidLines } = parseVocabulary();
   if (invalidLines.length) {
     showStatus(`Add a Chinese word and its definition to vocabulary line${invalidLines.length === 1 ? "" : "s"} ${invalidLines.join(", ")}.`, "error");
@@ -1258,15 +1431,33 @@ exportButton.addEventListener("click", async () => {
     showStatus("Generate translations & study fields after entering or changing vocabulary so WordRuby can be included in the export.", "error");
     return;
   }
+  const exportLines = vocabularyOnly
+    ? linesForExport(vocabularyEntries)
+    : lines;
+  if (!exportLines.length) {
+    showStatus("No dialogue lines contain the provided vocabulary.", "error");
+    return;
+  }
+  if (!exportLines.every(validLine)) {
+    showStatus("Set a start and end time for every line that will be exported.", "error");
+    return;
+  }
   exportButton.disabled = true;
-  exportButton.textContent = "Preparing clips…";
+  vocabularyExportButton.disabled = true;
+  const activeButton = vocabularyOnly ? vocabularyExportButton : exportButton;
+  activeButton.textContent = "Preparing clips…";
   try {
     const title = audioFile.name.replace(/\.mp3$/i, "");
     const manifest = {
       title,
       source_folder: sourceFolderInput.value.trim(),
       duration: audioPlayer.duration,
-      lines: lines.map((line) => ({
+      vocabulary: vocabularyEntries.map(({ word, pronunciation, definition }) => ({
+        hanzi: word,
+        pinyin: pronunciation || toneMarkedPinyinToNumbers(vocabularyRubyByWord.get(word) || ""),
+        definition,
+      })),
+      lines: exportLines.map((line) => ({
         sentence: line.sentence,
         start: line.start,
         end: line.end,
@@ -1294,14 +1485,23 @@ exportButton.addEventListener("click", async () => {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-    showStatus("Your ZIP is ready. It includes an MP3 for each line plus dialogue JSON and CSV.", "success");
+    showStatus(
+      vocabularyOnly
+        ? `Your ZIP is ready. It includes ${exportLines.length} vocabulary-matched clip${exportLines.length === 1 ? "" : "s"} plus dialogue text and metadata.`
+        : "Your ZIP is ready. It includes an MP3 for each line plus dialogue text and metadata.",
+      "success",
+    );
   } catch (error) {
     showStatus(error.message, "error");
   } finally {
     exportButton.innerHTML = 'Export line clips <span aria-hidden="true">↓</span>';
+    vocabularyExportButton.innerHTML = 'Export vocabulary lines <span aria-hidden="true">↓</span>';
     updateExportState();
   }
-});
+}
+
+exportButton.addEventListener("click", () => exportDialogue(false));
+vocabularyExportButton.addEventListener("click", () => exportDialogue(true));
 
 audioPlayer.addEventListener("loadedmetadata", updateExportState);
 drawWaveform();

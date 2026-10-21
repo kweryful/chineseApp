@@ -194,6 +194,9 @@ class DialogueAppTests(unittest.TestCase):
             "title": "课文 Lesson 1",
             "source_folder": r"H:\Chinese\Standard Course\HSK 4\hsk4_SB_B_audio",
             "duration": 2,
+            "vocabulary": [
+                {"hanzi": "你好", "pinyin": "ni3hao3", "definition": "hello"}
+            ],
             "lines": [
                 {
                     "sentence": "你好。",
@@ -230,9 +233,19 @@ class DialogueAppTests(unittest.TestCase):
                     "hsk4_SB_B_audio-11-2-line-002.mp3",
                     "dialogue.json",
                     "dialogue.csv",
+                    "11-2.txt",
+                    "11-2-vocab.txt",
                 },
             )
             self.assertGreater(len(archive.read("hsk4_SB_B_audio-11-2-line-001.mp3")), 0)
+            self.assertEqual(
+                archive.read("11-2.txt").decode("utf-8"),
+                "你好。\n再见。",
+            )
+            self.assertEqual(
+                archive.read("11-2-vocab.txt").decode("utf-8"),
+                "你好\tni3hao3\thello",
+            )
             exported = json.loads(archive.read("dialogue.json"))
             self.assertEqual(exported["lines"][0]["sentence"], "你好。")
             self.assertEqual(exported["lines"][0]["gloss"], "Hello.")
@@ -271,6 +284,24 @@ class DialogueAppTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
         self.assertIn("audio duration", response.json()["detail"])
+
+    def test_export_omits_vocabulary_file_when_no_vocabulary_is_provided(self) -> None:
+        manifest = {
+            "title": "Lesson",
+            "duration": 2,
+            "lines": [
+                {"sentence": "你好。", "start": 0.1, "end": 0.8, "gloss": ""}
+            ],
+        }
+        response = self.client.post(
+            "/api/export",
+            files={"audio": ("11-2.mp3", self.audio, "audio/mpeg")},
+            data={"manifest": json.dumps(manifest, ensure_ascii=False)},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            self.assertIn("11-2.txt", archive.namelist())
+            self.assertNotIn("11-2-vocab.txt", archive.namelist())
 
 
 if __name__ == "__main__":

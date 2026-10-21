@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dialogue Workshop</title>
-    <link rel="stylesheet" href="/static/styles.css?v=9">
+    <link rel="stylesheet" href="/static/styles.css?v=20">
   </head>
   <body>
     <!-- <header class="topbar">
@@ -17,7 +17,7 @@
         <section class="intro">
           <div class="eyebrow">CHINESE LISTENING</div>
           <h1>Chinese lesson workflow</h1>
-          <p>Bring your text and audio together, time each line, add English translations, and export ready-to-study clips.</p>
+          <!-- <p>Bring your text and audio together, time each line, add English translations, and export ready-to-study clips.</p> -->
         </section>
 
         <section class="panel setup-panel" aria-labelledby="setup-title">
@@ -30,7 +30,7 @@
           </div>
           <label class="field-label" for="dialogue-text">Dialogue text <span class="hint">Speaker turns are split into sentences automatically</span></label>
           <textarea id="dialogue-text" rows="5" placeholder="你好！&#10;你要去哪儿？&#10;我想去火车站。"></textarea>
-          <label class="field-label" for="source-folder-name">Source folder name <span class="optional">optional</span></label>
+          <label class="field-label" for="source-folder-name">Source name <span class="optional">optional</span></label>
           <input id="source-folder-name" class="text-input" type="text" maxlength="120" placeholder="e.g. hsk4_SB_B_audio">
           <div class="upload-row">
             <label class="upload-control" for="audio-file">
@@ -38,7 +38,7 @@
               <span><strong>Choose dialogue MP3</strong><small id="audio-name">No audio selected</small></span>
               <input id="audio-file" type="file" accept=".mp3,audio/mpeg">
             </label>
-            <button id="auto-sync-button" class="button button-primary" type="button">Prepare &amp; auto-sync <span aria-hidden="true">✦</span></button>
+            <button id="auto-sync-button" class="button button-primary" type="button">Prepare, sync &amp; generate fields <span aria-hidden="true">✦</span></button>
           </div>
         </section>
 
@@ -46,7 +46,7 @@
           <div class="section-heading">
             <div>
               <div class="step-label">STEP 02</div>
-              <h2 id="editor-title">Sync and translate each line</h2>
+              <h2 id="editor-title">Sync each line</h2>
             </div>
             <div class="editor-actions">
               <span id="line-count" class="count-badge">0 lines</span>
@@ -58,19 +58,22 @@
                 <strong id="loaded-audio-title">Dialogue audio</strong>
                 <span id="audio-duration" class="quiet">Load an MP3 to get started</span>
               </div>
-              <audio id="audio-player" controls preload="metadata"></audio>
+              <audio id="audio-player" preload="metadata"></audio>
             </div>
             <div class="waveform-wrap">
-              <canvas id="waveform" aria-label="Audio waveform. Click to seek."></canvas>
+              <canvas id="waveform" aria-label="Full dialogue waveform overview. Set timing on individual line waveforms below."></canvas>
               <div id="waveform-empty" class="waveform-empty">Your audio waveform will appear here</div>
             </div>
-            <div class="sync-tip"><span class="tip-dot"></span>Drag across a line waveform to set its start and end. The waveform includes extra audio around the current selection; click to listen.</div>
+            <div class="audio-playback-controls">
+              <button id="audio-play-button" class="audio-play-button" type="button" aria-label="Play full dialogue" disabled>▶</button>
+              <span id="audio-current-time" class="audio-time">0:00.00</span>
+              <input id="audio-seek" class="audio-seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="Seek through full dialogue" disabled>
+              <span id="audio-total-time" class="audio-time">0:00.00</span>
+            </div>
+            <!-- <div class="sync-tip"><span class="tip-dot"></span>The full waveform is an overview. Set or adjust timing on each line's waveform below.</div> -->
           </div>
           <div class="line-list-heading">
             <h3>Dialogue lines</h3>
-            <div class="line-list-actions">
-              <button id="generate-fields-button" class="button button-subtle" type="button">Generate translations &amp; study fields <span aria-hidden="true">↗</span></button>
-            </div>
           </div>
           <div id="line-list" class="line-list"></div>
           <div class="export-row">
@@ -78,7 +81,10 @@
               <strong>Ready to make your clips?</strong>
               <span id="export-hint">Drag across a waveform to set a start and end time for every line.</span>
             </div>
-            <button id="export-button" class="button button-primary" type="button" disabled>Export line clips <span aria-hidden="true">↓</span></button>
+            <div class="export-buttons">
+              <button id="vocabulary-export-button" class="button button-subtle" type="button" hidden disabled>Export vocabulary lines <span aria-hidden="true">↓</span></button>
+              <button id="export-button" class="button button-primary" type="button" disabled>Export line clips <span aria-hidden="true">↓</span></button>
+            </div>
           </div>
         </section>
 
@@ -96,11 +102,11 @@
         <textarea id="vocabulary-input" rows="12" placeholder="阅读 yue4du2 to read&#10;来得及 lai2de5ji2 there's still time&#10;复杂 fu4za2 complicated"></textarea>
         <div id="vocabulary-preview" class="vocabulary-preview" hidden aria-live="polite"></div>
         <button id="vocabulary-toggle" class="button button-subtle vocabulary-toggle" type="button">Show formatted vocabulary</button>
-        <p class="vocabulary-help">One entry per line: word, optional numbered pinyin, then definition. For example, <code>血 xue4 blood</code> or <code>血 xie3 blood</code>. Matched words are added to each line's <code>Word</code>, <code>WordDef</code>, and <code>WordRuby</code> export fields.</p>
-        <p class="vocabulary-help">Edit the list any time to change the words and definitions.</p>
+        <p class="vocabulary-help">One entry per line: word, optional numbered pinyin, then definition.</p>
+        <p class="vocabulary-help">For example, <code>血 xue4 blood</code> or <code>血 xie3 blood</code>.</p>
       </aside>
       <footer>Audio and dialogue text stay on your computer. Speech, translation and dictionary data download locally on first use.</footer>
     </main>
-    <script src="/static/app.js?v=19" defer></script>
+    <script src="/static/app.js?v=29" defer></script>
   </body>
 </html>

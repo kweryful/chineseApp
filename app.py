@@ -63,11 +63,18 @@ class DialogueLine(BaseModel):
     WordRuby: str = Field(default="", max_length=250_000)
 
 
+class VocabularyExportEntry(BaseModel):
+    hanzi: str = Field(min_length=1, max_length=500)
+    pinyin: str = Field(default="", max_length=200)
+    definition: str = Field(min_length=1, max_length=5000)
+
+
 class ExportManifest(BaseModel):
     title: str = Field(default="dialogue", max_length=120)
     source_folder: str = Field(default="", max_length=500)
     duration: float = Field(gt=0)
     lines: list[DialogueLine] = Field(min_length=1, max_length=MAX_LINES)
+    vocabulary: list[VocabularyExportEntry] = Field(default_factory=list, max_length=MAX_LINES)
 
 
 def _safe_title(title: str) -> str:
@@ -331,6 +338,16 @@ async def export_dialogue(
                 "dialogue.json",
                 json.dumps(dialogue, ensure_ascii=False, indent=2),
             )
+            archive.writestr(
+                f"{audio_stem}.txt",
+                "\n".join(line.sentence for line in data.lines),
+            )
+            if data.vocabulary:
+                vocabulary_text = "\n".join(
+                    f"{entry.hanzi}\t{entry.pinyin}\t{entry.definition}"
+                    for entry in data.vocabulary
+                )
+                archive.writestr(f"{audio_stem}-vocab.txt", vocabulary_text)
 
             csv_buffer = io.StringIO(newline="")
             writer = csv.DictWriter(
