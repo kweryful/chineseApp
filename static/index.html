@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dialogue Workshop</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=2">
   </head>
   <body>
     <header class="topbar">
@@ -67,7 +67,10 @@
         </div>
         <div class="line-list-heading">
           <h3>Dialogue lines</h3>
-          <button id="gloss-button" class="button button-subtle" type="button">Generate English translations <span aria-hidden="true">↗</span></button>
+          <div class="line-list-actions">
+            <button id="gloss-button" class="button button-subtle" type="button">Generate English translations <span aria-hidden="true">↗</span></button>
+            <button id="study-fields-button" class="button button-subtle" type="button">Generate readings, ruby &amp; glosses <span aria-hidden="true">↗</span></button>
+          </div>
         </div>
         <div id="line-list" class="line-list"></div>
         <div class="export-row">
@@ -80,8 +83,8 @@
       </section>
 
       <div id="status" class="status hidden" role="status" aria-live="polite"></div>
-      <footer>Audio and dialogue text stay on your computer. Speech and translation models download locally on first use.</footer>
+      <footer>Audio and dialogue text stay on your computer. Speech, translation and dictionary data download locally on first use.</footer>
     </main>
-    <script src="/static/app.js?v=7" defer></script>
+    <script src="/static/app.js?v=10" defer></script>
   </body>
 </html>

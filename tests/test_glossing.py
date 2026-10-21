@@ -1,9 +1,10 @@
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 import glossing
+import study_fields
 
 
 class TranslationTests(unittest.TestCase):
@@ -17,6 +18,27 @@ class TranslationTests(unittest.TestCase):
                 glossing.generate_translations(["你好。", "再见。"]),
                 ["English: 你好。", "English: 再见。"],
             )
+
+    def test_tone_sandhi_matches_addon_sample_for_yi(self) -> None:
+        def tone_number(syllable: str) -> str:
+            return {"yī": "1", "bān": "1"}[syllable]
+
+        def no_tone(syllable: str) -> str:
+            return {"yī": "yi"}[syllable]
+
+        transcribe = SimpleNamespace(
+            tone_number=tone_number,
+            no_tone=no_tone,
+            accentuate=lambda _parts, _target: ["yì"],
+        )
+        self.assertEqual(
+            study_fields._apply_tone_sandhi(
+                ["一", "般"],
+                ["yī", "bān"],
+                transcribe,
+            ),
+            ["yì", "bān"],
+        )
 
     def test_downloads_chinese_english_model_once_when_not_installed(self) -> None:
         installed = False

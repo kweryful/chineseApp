@@ -1,0 +1,115 @@
+#########################
+The chinese.db database was created by aggregating the following sources.
+
+#########################
+This database contains an extract of the Unihan database
+
+ © 2023 Unicode®, Inc.  For terms of use, see http://www.unicode.org/terms_of_use.html 
+
+#########################
+This database contains an extract of CC-CEDICT
+
+# CC-CEDICT
+# Community maintained free Chinese-English dictionary.
+# 
+# Published by MDBG
+# 
+# License:
+# Creative Commons Attribution-ShareAlike 4.0 International License
+# https://creativecommons.org/licenses/by-sa/4.0/
+# 
+# Referenced works:
+# CEDICT - Copyright (C) 1997, 1998 Paul Andrew Denisowski
+# 
+# CC-CEDICT can be downloaded from:
+# https://www.mdbg.net/chinese/dictionary?page=cc-cedict
+# 
+# Additions and corrections can be sent through:
+# https://cc-cedict.org/editor/editor.php
+# 
+# For more information about CC-CEDICT see:
+# https://cc-cedict.org/wiki/
+# 
+#! version=1
+#! subversion=0
+#! format=ts
+#! charset=UTF-8
+#! entries=122086
+#! publisher=MDBG
+#! license=https://creativecommons.org/licenses/by-sa/4.0/
+#! date=2023-11-02T07:54:49Z
+#! time=1698911689
+
+
+#########################
+This database contains an extract of CFDICT
+
+#############################################################################
+#  _____   _____   _____   _   _____   _____  
+# /  ___| |  ___| |  _  \ | | /  ___| |_   _| 
+# | |     | |__   | | | | | | | |       | |   
+# | |     |  __|  | | | | | | | |       | |   
+# | |___  | |     | |_| | | | | |___    | |   
+# \_____| |_|     |_____/ |_| \_____|   |_|    
+# CFDICT, le dictionnaire chinois-francais libre 
+# par Chine Informations (Depuis 2010)
+#	
+# - Version : 02/11/2023 02:30 
+# - Nombre de traductions : environ 56 294
+#	
+# - Fondateur : David Houstin - david.houstin@chine-informations.com
+# - Page officielle : https://chine.in/mandarin/dictionnaire/CFDICT/
+# - Licence : https://creativecommons.org/licenses/by-sa/3.0/
+#
+# Cette creation est mise a disposition sous un contrat CREATIVE COMMONS 3
+# "Paternite - Partage des Conditions Initiales a l'Identique",
+# impliquant qu'il est autorise d'utiliser ces donnees a des fins
+# commerciales ou non, sous la reserve de mentionner le site officiel
+# (https://chine.in) et que, dans le cas ou vous 
+# amelioreriez ou ajouteriez des donnees au fichier, vous n'avez le droit
+# de le redistribuer que sous la meme licence que celle-ci.
+#
+#############################################################################
+
+
+#########################
+This database contains an extract of CC-Canto
+
+# CC-Canto
+# A Cantonese dictionary for everyone
+# Version 2016-01-15
+# 
+# Copyright (c) 2015-16 Pleco Software Incorporated
+# Distributed under a Creative Commons Attribution-Share Alike 3.0 license (http://creativecommons.org/licenses/by-sa/3.0/)
+#
+# For more information + to submit feedback, see our website at cccanto.org
+#
+# This dictionary is intended to be used in conjunction with the (also open-source) Chinese dictionary CC-CEDICT
+# See mdbg.net to download CC-CEDICT, see cccanto.org to download an open-source list of Cantonese readings for CC-CEDICT
+#
+
+
+#########################
+This database contains an extract of HanDeDICT
+
+# Kollaborativ entwickeltes, freies chinesisch-deutsches Wörterbuch
+# Veröffentlicht von Gábor L Ugray
+# Datenstand: 2023-11-02T02:00:01Z
+#
+# Lizenz: CC-BY-SA 3.0
+# https://creativecommons.org/licenses/by-sa/3.0/deed.de
+#
+# Online-Suche und Redaktionsoberfläche:
+# https://handedict.zydeo.net/
+#
+# Ursprünglich erstellt mit der Unterstützung der Chinesisch-Deutschen Gesellschaft e.V. Hamburg,
+# unter der Leitung von Dr. Michael Klaus Engel und Jan Hefti
+# https://web.archive.org/web/20150325185952/http://www.handedict.de/chinesisch_deutsch.php?mode=dl
+# https://web.archive.org/web/20150325174145/http://www.handedict.de/chinesisch_deutsch.php?mode=about
+#
+# Format: Diese Datei ist kompatibel mit dem ursprünglichen CEDICT-Format.
+# Als Erweiterung enthält die Datei die gesamte Änderungsgeschichte jedes Eintrags.
+# Die Benutzernamen deuten die Urheber der Änderungen/Beiträge an.
+# Siehe https://handedict.zydeo.net/de/read/details oder https://github.com/gugray/HanDeDict
+
+

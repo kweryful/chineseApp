@@ -67,6 +67,31 @@ class DialogueAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertIn("one English translation per line", response.json()["detail"])
 
+    def test_study_fields_endpoint_returns_addon_html_fields(self) -> None:
+        generated = [
+            {
+                "reading": '<span class="tone4">yì</span>',
+                "ruby": "<ruby>一<rt>yì</rt></ruby>",
+                "dictionary_gloss": "❖ general",
+            }
+        ]
+        with patch("app.generate_study_fields", return_value=generated):
+            response = self.client.post(
+                "/api/study-fields",
+                json={"lines": ["一般情况下。"]},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {"lines": generated})
+
+    def test_study_fields_endpoint_reports_dictionary_download_errors(self) -> None:
+        with patch(
+            "app.generate_study_fields",
+            side_effect=RuntimeError("Could not download the local dictionary."),
+        ):
+            response = self.client.post("/api/study-fields", json={"lines": ["你好。"]})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("local dictionary", response.json()["detail"])
+
     def test_auto_sync_endpoint_uses_local_alignment_result(self) -> None:
         matches = [
             {
@@ -101,7 +126,15 @@ class DialogueAppTests(unittest.TestCase):
             "title": "课文 Lesson 1",
             "duration": 2,
             "lines": [
-                {"sentence": "你好。", "start": 0.1, "end": 0.8, "gloss": "Hello."},
+                {
+                    "sentence": "你好。",
+                    "start": 0.1,
+                    "end": 0.8,
+                    "gloss": "Hello.",
+                    "reading": '<span class="tone3">nǐ</span>',
+                    "ruby": "<ruby>你<rt>nǐ</rt></ruby>",
+                    "dictionary_gloss": "❖ you",
+                },
                 {"sentence": "再见。", "start": 0.9, "end": 1.7, "gloss": "Goodbye."},
             ],
         }
@@ -121,6 +154,9 @@ class DialogueAppTests(unittest.TestCase):
             exported = json.loads(archive.read("dialogue.json"))
             self.assertEqual(exported["lines"][0]["sentence"], "你好。")
             self.assertEqual(exported["lines"][0]["gloss"], "Hello.")
+            self.assertEqual(exported["lines"][0]["reading"], '<span class="tone3">nǐ</span>')
+            self.assertEqual(exported["lines"][0]["ruby"], "<ruby>你<rt>nǐ</rt></ruby>")
+            self.assertEqual(exported["lines"][0]["dictionary_gloss"], "❖ you")
             self.assertTrue(archive.read("dialogue.csv").startswith(b"\xef\xbb\xbf"))
 
     def test_export_rejects_line_past_audio_duration(self) -> None:

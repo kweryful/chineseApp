@@ -7,3 +7,4 @@ faster-whisper>=1.1,<2
 huggingface-hub>=0.23,<1
 av>=12,<17
 argostranslate>=1.9,<2
+jieba>=0.42.1,<1

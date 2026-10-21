@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from alignment import transcribe_and_align
 from glossing import generate_translations
+from study_fields import generate_study_fields
 
 BASE_DIR = Path(__file__).resolve().parent
 MAX_AUDIO_BYTES = 100 * 1024 * 1024
@@ -33,6 +34,10 @@ class TranslationRequest(BaseModel):
     lines: list[str] = Field(min_length=1, max_length=MAX_LINES)
 
 
+class StudyFieldsRequest(BaseModel):
+    lines: list[str] = Field(min_length=1, max_length=MAX_LINES)
+
+
 class AlignmentRequest(BaseModel):
     lines: list[str] = Field(min_length=1, max_length=MAX_LINES)
     duration: float = Field(gt=0)
@@ -43,6 +48,9 @@ class DialogueLine(BaseModel):
     start: float = Field(ge=0)
     end: float = Field(gt=0)
     gloss: str = Field(default="", max_length=5000)
+    reading: str = Field(default="", max_length=250_000)
+    ruby: str = Field(default="", max_length=250_000)
+    dictionary_gloss: str = Field(default="", max_length=500_000)
 
 
 class ExportManifest(BaseModel):
@@ -86,6 +94,30 @@ def translate(request: TranslationRequest) -> dict[str, list[str]]:
             detail="The local translator must return one English translation per line.",
         )
     return {"translations": translations}
+
+
+@app.post("/api/study-fields")
+def generate_line_study_fields(
+    request: StudyFieldsRequest,
+) -> dict[str, list[dict[str, str]]]:
+    try:
+        fields = generate_study_fields(request.lines)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    if len(fields) != len(request.lines) or any(
+        not isinstance(item, dict)
+        or not all(
+            isinstance(item.get(field), str)
+            for field in ("reading", "ruby", "dictionary_gloss")
+        )
+        for item in fields
+    ):
+        raise HTTPException(
+            status_code=500,
+            detail="The Chinese Support engine must return reading, ruby, and gloss for every line.",
+        )
+    return {"lines": fields}
 
 
 @app.post("/api/align")
@@ -207,6 +239,9 @@ async def export_dialogue(
                         "start": line.start,
                         "end": line.end,
                         "gloss": line.gloss,
+                        "reading": line.reading,
+                        "ruby": line.ruby,
+                        "dictionary_gloss": line.dictionary_gloss,
                         "clip": clip_name,
                     }
                 )
@@ -224,7 +259,17 @@ async def export_dialogue(
             csv_buffer = io.StringIO(newline="")
             writer = csv.DictWriter(
                 csv_buffer,
-                fieldnames=["number", "sentence", "start", "end", "gloss", "clip"],
+                fieldnames=[
+                    "number",
+                    "sentence",
+                    "start",
+                    "end",
+                    "gloss",
+                    "reading",
+                    "ruby",
+                    "dictionary_gloss",
+                    "clip",
+                ],
             )
             writer.writeheader()
             writer.writerows(exported_lines)

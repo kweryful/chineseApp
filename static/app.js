@@ -8,6 +8,7 @@ const autoSyncButton = document.querySelector("#auto-sync-button");
 const uploadRow = document.querySelector(".upload-row");
 const editorActions = document.querySelector(".editor-actions");
 const glossButton = document.querySelector("#gloss-button");
+const studyFieldsButton = document.querySelector("#study-fields-button");
 const statusBox = document.querySelector("#status");
 
 let audioFile = null;
@@ -125,6 +126,59 @@ function updateExportState() {
       : "Drag across a waveform to set a start and end time for every line.";
 }
 
+function sanitizeStudyHtml(html) {
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const safeRoot = document.createElement("div");
+  const discardedTags = new Set([
+    "base",
+    "embed",
+    "iframe",
+    "link",
+    "math",
+    "meta",
+    "object",
+    "script",
+    "style",
+    "svg",
+    "template",
+  ]);
+
+  function copySafeNode(node, parent) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parent.append(document.createTextNode(node.textContent || ""));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const tag = node.tagName.toLowerCase();
+    if (discardedTags.has(tag)) return;
+    if (tag === "br" || tag === "hr") {
+      parent.append(document.createElement(tag));
+      return;
+    }
+    if (tag === "span") {
+      const toneClass = [...node.classList].find((name) => /^tone[1-5]$/u.test(name));
+      if (toneClass) {
+        const span = document.createElement("span");
+        span.className = toneClass;
+        node.childNodes.forEach((child) => copySafeNode(child, span));
+        parent.append(span);
+        return;
+      }
+    } else if (tag === "ruby" || tag === "rt") {
+      const element = document.createElement(tag);
+      node.childNodes.forEach((child) => copySafeNode(child, element));
+      parent.append(element);
+      return;
+    }
+
+    node.childNodes.forEach((child) => copySafeNode(child, parent));
+  }
+
+  parsed.body.childNodes.forEach((node) => copySafeNode(node, safeRoot));
+  return safeRoot.innerHTML;
+}
+
 function renderLines() {
   lineList.replaceChildren();
   document.querySelector("#line-count").textContent = `${lines.length} ${lines.length === 1 ? "line" : "lines"}`;
@@ -183,6 +237,83 @@ function renderLines() {
     gloss.setAttribute("aria-label", `English translation for line ${index + 1}`);
     gloss.value = line.gloss;
     gloss.addEventListener("input", () => { line.gloss = gloss.value; });
+
+    const studyFields = document.createElement("details");
+    studyFields.className = "study-fields";
+    studyFields.open = Boolean(line.studyFieldsOpen);
+    const studyFieldsSummary = document.createElement("summary");
+    studyFieldsSummary.textContent = "Reading, ruby & dictionary gloss";
+    studyFields.append(studyFieldsSummary);
+    for (const [field, label] of [
+      ["reading", "Reading"],
+      ["ruby", "Ruby"],
+      ["dictionaryGloss", "Dictionary gloss"],
+    ]) {
+      const fieldLabel = document.createElement("div");
+      fieldLabel.className = "study-field";
+      const labelText = document.createElement("span");
+      labelText.className = "study-field-label";
+      labelText.textContent = label;
+
+      const editorToolbar = document.createElement("div");
+      editorToolbar.className = "study-field-toolbar";
+      const modeButton = document.createElement("button");
+      modeButton.type = "button";
+      modeButton.className = "study-field-mode";
+      const sourceMode = `${field}SourceMode`;
+      modeButton.textContent = line[sourceMode] ? "Preview" : "Edit HTML";
+
+      const formattedEditor = document.createElement("div");
+      formattedEditor.className = "study-field-preview";
+      formattedEditor.contentEditable = "true";
+      formattedEditor.setAttribute("role", "textbox");
+      formattedEditor.setAttribute("aria-multiline", "true");
+      formattedEditor.setAttribute("aria-label", `${label} for line ${index + 1}`);
+      formattedEditor.spellcheck = false;
+      formattedEditor.innerHTML = sanitizeStudyHtml(line[field] || "");
+      formattedEditor.hidden = Boolean(line[sourceMode]);
+      formattedEditor.addEventListener("input", () => {
+        line[field] = formattedEditor.innerHTML;
+      });
+      formattedEditor.addEventListener("blur", () => {
+        const safeHtml = sanitizeStudyHtml(formattedEditor.innerHTML);
+        formattedEditor.innerHTML = safeHtml;
+        line[field] = safeHtml;
+      });
+
+      const sourceEditor = document.createElement("textarea");
+      sourceEditor.className = "study-field-source";
+      sourceEditor.rows = 3;
+      sourceEditor.value = line[field] || "";
+      sourceEditor.setAttribute("aria-label", `${label} HTML for line ${index + 1}`);
+      sourceEditor.hidden = !line[sourceMode];
+      sourceEditor.addEventListener("input", () => { line[field] = sourceEditor.value; });
+
+      modeButton.addEventListener("click", () => {
+        line[sourceMode] = !line[sourceMode];
+        if (line[sourceMode]) {
+          sourceEditor.value = line[field] || "";
+          sourceEditor.hidden = false;
+          formattedEditor.hidden = true;
+          modeButton.textContent = "Preview";
+          sourceEditor.focus();
+        } else {
+          line[field] = sanitizeStudyHtml(sourceEditor.value);
+          formattedEditor.innerHTML = line[field];
+          sourceEditor.hidden = true;
+          formattedEditor.hidden = false;
+          modeButton.textContent = "Edit HTML";
+          formattedEditor.focus();
+        }
+      });
+
+      editorToolbar.append(modeButton);
+      fieldLabel.append(labelText, editorToolbar, formattedEditor, sourceEditor);
+      studyFields.append(fieldLabel);
+    }
+    studyFields.addEventListener("toggle", () => {
+      line.studyFieldsOpen = studyFields.open;
+    });
 
     const previewRow = document.createElement("div");
     previewRow.className = "line-preview-row";
@@ -263,7 +394,7 @@ function renderLines() {
     });
     previewRow.append(lineWaveform, previewButton);
 
-    content.append(sentence, previewRow, controls, gloss);
+    content.append(sentence, previewRow, controls, gloss, studyFields);
     card.append(number, content);
     lineList.append(card);
   });
@@ -644,6 +775,9 @@ autoSyncButton.addEventListener("click", async () => {
       start: null,
       end: null,
       gloss: "",
+      reading: "",
+      ruby: "",
+      dictionaryGloss: "",
       confidence: null,
       matched: null,
       manualTiming: false,
@@ -731,6 +865,9 @@ autoSyncButton.addEventListener("click", async () => {
         start: hasValidMatch(match) ? match.start : null,
         end: hasValidMatch(match) ? match.end : null,
         gloss: unchangedSingleLine ? originalLine.gloss : "",
+        reading: unchangedSingleLine ? originalLine.reading : "",
+        ruby: unchangedSingleLine ? originalLine.ruby : "",
+        dictionaryGloss: unchangedSingleLine ? originalLine.dictionaryGloss : "",
         confidence: Number.isFinite(match?.confidence) ? match.confidence : 0,
         matched: hasValidMatch(match),
         manualTiming: false,
@@ -743,6 +880,9 @@ autoSyncButton.addEventListener("click", async () => {
         start: match.start,
         end: match.end,
         gloss: "",
+        reading: "",
+        ruby: "",
+        dictionaryGloss: "",
         confidence: Number.isFinite(match.confidence) ? match.confidence : 0,
         matched: true,
         manualTiming: false,
@@ -823,6 +963,55 @@ glossButton.addEventListener("click", async () => {
   }
 });
 
+studyFieldsButton.addEventListener("click", async () => {
+  if (!lines.length) {
+    showStatus("Prepare the dialogue lines before generating readings and glosses.", "error");
+    return;
+  }
+  studyFieldsButton.disabled = true;
+  studyFieldsButton.textContent = "Generating study fields…";
+  showStatus(
+    "Generating readings, ruby, and dictionary glosses locally. The first use downloads the add-on's 76 MB dictionary.",
+    "info",
+  );
+  try {
+    const response = await fetch("/api/study-fields", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lines: lines.map((line) => line.sentence) }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Study field generation failed.");
+    if (!Array.isArray(result.lines) || result.lines.length !== lines.length) {
+      throw new Error("The Chinese Support engine returned an incomplete set of study fields.");
+    }
+    result.lines.forEach((fields, index) => {
+      if (
+        !fields
+        || typeof fields.reading !== "string"
+        || typeof fields.ruby !== "string"
+        || typeof fields.dictionary_gloss !== "string"
+      ) {
+        throw new Error(`The Chinese Support engine returned invalid fields for line ${index + 1}.`);
+      }
+      lines[index].reading = fields.reading;
+      lines[index].ruby = fields.ruby;
+      lines[index].dictionaryGloss = fields.dictionary_gloss;
+      lines[index].studyFieldsOpen = index === 0;
+    });
+    renderLines();
+    showStatus(
+      "Readings, ruby, and dictionary glosses generated locally. Expand each line to review or edit its HTML.",
+      "success",
+    );
+  } catch (error) {
+    showStatus(error.message, "error");
+  } finally {
+    studyFieldsButton.disabled = false;
+    studyFieldsButton.innerHTML = 'Generate readings, ruby &amp; glosses <span aria-hidden="true">↗</span>';
+  }
+});
+
 exportButton.addEventListener("click", async () => {
   if (!audioFile || !allLinesTimed()) return;
   exportButton.disabled = true;
@@ -832,7 +1021,15 @@ exportButton.addEventListener("click", async () => {
     const manifest = {
       title,
       duration: audioPlayer.duration,
-      lines: lines.map(({ sentence, start, end, gloss }) => ({ sentence, start, end, gloss })),
+      lines: lines.map(({ sentence, start, end, gloss, reading, ruby, dictionaryGloss }) => ({
+        sentence,
+        start,
+        end,
+        gloss,
+        reading,
+        ruby,
+        dictionary_gloss: dictionaryGloss,
+      })),
     };
     const body = new FormData();
     body.append("audio", audioFile, audioFile.name);
