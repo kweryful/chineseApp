@@ -282,7 +282,7 @@ function setVocabularyPreviewMode(enabled) {
   vocabularyInput.hidden = enabled;
   vocabularyInputLabel.hidden = enabled;
   vocabularyPreview.hidden = !enabled;
-  vocabularyToggle.textContent = enabled ? "Edit vocabulary" : "Show formatted vocabulary";
+  vocabularyToggle.textContent = enabled ? "Edit vocabulary" : "Format vocabulary";
 }
 
 function formatTime(seconds) {
@@ -1479,7 +1479,7 @@ vocabularyToggle.addEventListener("click", async () => {
     showStatus(error.message, "error");
   } finally {
     vocabularyToggle.disabled = false;
-    if (vocabularyPreview.hidden) vocabularyToggle.textContent = "Show formatted vocabulary";
+    if (vocabularyPreview.hidden) vocabularyToggle.textContent = "Format vocabulary";
   }
 });
 
