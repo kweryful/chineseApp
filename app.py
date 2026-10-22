@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import html
 import io
 import json
 import re
@@ -11,6 +13,7 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
 
+import genanki
 import imageio_ffmpeg
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -25,6 +28,28 @@ from study_fields import generate_study_fields
 BASE_DIR = Path(__file__).resolve().parent
 MAX_AUDIO_BYTES = 100 * 1024 * 1024
 MAX_LINES = 500
+ANKI_NOTE_FIELDS = (
+    "Hanzi",
+    "Reading",
+    "Meaning",
+    "Ruby",
+    "Sound",
+    "Q1",
+    "Q2",
+    "isProduction",
+    "Image",
+    "Gloss",
+    "Literal",
+    "Notes",
+    "Word",
+    "english",
+    "Q1 Word",
+    "Q1 Ruby",
+    "Q1 Def",
+    "Q2 Word",
+    "Q2 Ruby",
+    "Q2 Def",
+)
 
 app = FastAPI(title="Dialogue Workshop")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -80,6 +105,112 @@ class ExportManifest(BaseModel):
 def _safe_title(title: str) -> str:
     cleaned = re.sub(r"[^\w.-]+", "-", title.strip(), flags=re.UNICODE).strip(".-")
     return cleaned[:80] or "dialogue"
+
+
+def _anki_id(value: str) -> int:
+    digest = hashlib.sha256(value.encode("utf-8")).digest()
+    return (int.from_bytes(digest[:8], "big") & ((1 << 63) - 1)) or 1
+
+
+def _anki_sentence_with_bold_words(sentence: str, words: str) -> str:
+    escaped_sentence = html.escape(sentence, quote=False)
+    vocabulary = sorted(
+        {word.strip() for word in words.split(",") if word.strip()},
+        key=len,
+        reverse=True,
+    )
+    if not vocabulary:
+        return escaped_sentence
+    pattern = re.compile("|".join(re.escape(html.escape(word, quote=False)) for word in vocabulary))
+    return pattern.sub(lambda match: f"<b>{match.group(0)}</b>", escaped_sentence)
+
+
+def _write_anki_package(
+    lines: list[dict[str, object]],
+    title: str,
+    media_paths: list[Path],
+    output_path: Path,
+) -> None:
+    media_names = {media_path.name: media_path.name for media_path in media_paths}
+
+    model = genanki.Model(
+        1582785802209,
+        "Chinese (Sentence)",
+        fields=[{"name": name} for name in ANKI_NOTE_FIELDS],
+        templates=[
+            {
+                "name": "Listening",
+                "qfmt": '<div class="prompt">Listen to the sentence</div><div>{{Sound}}</div>',
+                "afmt": (
+                    "{{FrontSide}}<hr id=answer><div>{{Ruby}}</div>"
+                    "<div>{{Reading}}</div><div>{{Meaning}}</div><div>{{english}}</div>"
+                    "{{#Word}}<div>{{Word}}</div>{{/Word}}"
+                ),
+            },
+            {
+                "name": "Q1",
+                "qfmt": "{{#Q1}}<div>{{Q1}}</div>{{/Q1}}",
+                "afmt": (
+                    "{{FrontSide}}<hr id=answer>"
+                    "{{#Q1 Def}}<div>{{Q1 Def}}</div>{{/Q1 Def}}"
+                    "{{#Q1 Word}}<div>{{Q1 Word}}</div>{{/Q1 Word}}"
+                    "{{#Q1 Ruby}}<div>{{Q1 Ruby}}</div>{{/Q1 Ruby}}"
+                ),
+            },
+            {
+                "name": "Q2",
+                "qfmt": "{{#Q2}}<div>{{Q2}}</div>{{/Q2}}",
+                "afmt": (
+                    "{{FrontSide}}<hr id=answer>"
+                    "{{#Q2 Def}}<div>{{Q2 Def}}</div>{{/Q2 Def}}"
+                    "{{#Q2 Word}}<div>{{Q2 Word}}</div>{{/Q2 Word}}"
+                    "{{#Q2 Ruby}}<div>{{Q2 Ruby}}</div>{{/Q2 Ruby}}"
+                ),
+            },
+        ],
+        css=(
+            ".card { font-family: Arial, sans-serif; font-size: 20px; line-height: 1.5; "
+            "text-align: center; color: black; background: white; }"
+            ".prompt { margin-bottom: 18px; }"
+        ),
+    )
+    deck = genanki.Deck(_anki_id(f"dialogue-workshop-deck:{title}"), title)
+    for line in lines:
+        sentence = html.escape(str(line["sentence"]), quote=False)
+        word = html.escape(str(line["Word"]), quote=False)
+        q1_sentence = _anki_sentence_with_bold_words(str(line["sentence"]), str(line["Word"]))
+        note_fields = {
+            "Hanzi": sentence,
+            "Reading": str(line["reading"]),
+            "Meaning": html.escape(str(line["gloss"]), quote=False),
+            "Ruby": str(line["ruby"]),
+            "Sound": f'[sound:{media_names[str(line["clip"])]}]',
+            "Q1": q1_sentence,
+            "Q2": "",
+            "isProduction": "",
+            "Image": "",
+            "Gloss": "",
+            "Literal": "",
+            "Notes": "",
+            "Word": word,
+            "english": str(line["dictionary_gloss"]),
+            "Q1 Word": word,
+            "Q1 Ruby": str(line["WordRuby"]),
+            "Q1 Def": str(line["WordDef"]),
+            "Q2 Word": "",
+            "Q2 Ruby": "",
+            "Q2 Def": "",
+        }
+        deck.add_note(
+            genanki.Note(
+                model=model,
+                fields=[note_fields[name] for name in ANKI_NOTE_FIELDS],
+                guid=genanki.guid_for(title, str(line["number"]), str(line["sentence"])),
+            )
+        )
+    package = genanki.Package(deck)
+    package.media_files = [str(path) for path in media_paths]
+    package.write_to_file(str(output_path))
 
 
 def _ffmpeg_path() -> str:
@@ -322,6 +453,15 @@ async def export_dialogue(
                         "clip": clip_name,
                     }
                 )
+
+            anki_path = temp_path / f"{audio_stem}.apkg"
+            _write_anki_package(
+                exported_lines,
+                data.title,
+                [temp_path / str(line["clip"]) for line in exported_lines],
+                anki_path,
+            )
+            archive.write(anki_path, arcname=anki_path.name)
 
             dialogue = {
                 "title": data.title,

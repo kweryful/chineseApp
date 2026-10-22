@@ -23,6 +23,8 @@ Open <http://127.0.0.1:8000>. The app binds to the local machine by default. Aud
 
 Automatic sync uses the `base` faster-whisper model on the CPU. The first sync downloads the model from Hugging Face (about 150 MB); later syncs use the cached local copy. English translations use Argos Translate on your computer; the first translation downloads the Chinese-to-English model, which is then cached locally. Dialogue text and audio are not sent to a transcription or translation service. Set `DIALOGUE_WHISPER_MODEL` before starting the app to select another faster-whisper model size, such as `small`.
 
+Each export ZIP also contains an `<mp3-name>.apkg` Anki deck using the **Chinese (Sentence)** note type and its `Hanzi`, `Reading`, `Meaning`, `Ruby`, `Sound`, `Q1`, `Q1 Word`, `Q1 Ruby`, `Q1 Def`, and related fields. Every note maps the dialogue sentence to `Hanzi` and `Q1`; vocabulary words are bolded in `Q1`, and the audio clip is attached through `Sound` using its same descriptive filename from the ZIP (for example, `[sound:hsk4_SB_B_audio-11-2-line-001.mp3]`). The note's listening and Q1 cards use the sample note type's fields; Q2 fields are left blank. The **Export vocabulary lines** button produces a deck containing only those matching lines.
+
 When a line is selected, press **Down Arrow** to select the next line or **Up Arrow** to select the previous line. Arrow keys continue to edit text normally while a text field is focused.
 
 The full-dialogue overview waveform can receive keyboard focus; press **Space** while it is focused to play or pause the full recording.
@@ -36,6 +38,8 @@ Study-field generation also uses the pinyin and dictionary features from [Chines
 This application includes Chinese Support 3 code, licensed under GNU GPL version 3 or later; see [third_party/anki_chinese_support_3/LICENSE](./third_party/anki_chinese_support_3/LICENSE). Its dictionary data has additional source-specific attribution and license terms listed in [third_party/anki_chinese_support_3/chinese/data/db/COPYING.txt](./third_party/anki_chinese_support_3/chinese/data/db/COPYING.txt). The integrated source is pinned to upstream commit `306f3a32f453d33d949532c1325c1a689bbab7c2`; standalone adaptations are documented in [third_party/anki_chinese_support_3/README.md](./third_party/anki_chinese_support_3/README.md).
 
 ## Tests
+
+The project uses Python's built-in `unittest` framework. In VS Code, select the Python environment where the project dependencies are installed with **Python: Select Interpreter**, then open the Testing sidebar and choose **Refresh Tests** if discovery does not start automatically. Workspace settings enable unittest discovery for `test_*.py` files in `tests`.
 
 ```powershell
 python -m unittest discover -s tests

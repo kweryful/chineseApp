@@ -1,17 +1,31 @@
 import io
 import json
+import sqlite3
 import subprocess
+import tempfile
 import unittest
 import zipfile
+from pathlib import Path
 from unittest.mock import patch
 
 import imageio_ffmpeg
 from fastapi.testclient import TestClient
 
-from app import app
+from app import _anki_sentence_with_bold_words, app
 
 
 class DialogueAppTests(unittest.TestCase):
+    def test_anki_q1_bolds_matching_vocabulary_words(self) -> None:
+        self.assertEqual(
+            _anki_sentence_with_bold_words("别吃惊。", "吃惊"),
+            "别<b>吃惊</b>。",
+        )
+        self.assertEqual(
+            _anki_sentence_with_bold_words("京剧很好。", "京剧,好"),
+            "<b>京剧</b>很<b>好</b>。",
+        )
+        self.assertEqual(_anki_sentence_with_bold_words("别吃惊。", ""), "别吃惊。")
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.client = TestClient(app)
@@ -235,6 +249,7 @@ class DialogueAppTests(unittest.TestCase):
                     "dialogue.csv",
                     "11-2.txt",
                     "11-2-vocab.txt",
+                    "11-2.apkg",
                 },
             )
             self.assertGreater(len(archive.read("hsk4_SB_B_audio-11-2-line-001.mp3")), 0)
@@ -261,6 +276,91 @@ class DialogueAppTests(unittest.TestCase):
             self.assertEqual(exported["lines"][0]["Word"], "你好")
             self.assertEqual(exported["lines"][0]["WordDef"], "hello<hr>you")
             self.assertEqual(exported["lines"][0]["WordRuby"], "<ruby>你<rt>nǐ</rt></ruby>")
+            with zipfile.ZipFile(io.BytesIO(archive.read("11-2.apkg"))) as anki_package:
+                package_files = anki_package.namelist()
+                self.assertIn("collection.anki2", package_files)
+                media_map = json.loads(anki_package.read("media"))
+                self.assertEqual(
+                    set(media_map.values()),
+                    {
+                        "hsk4_SB_B_audio-11-2-line-001.mp3",
+                        "hsk4_SB_B_audio-11-2-line-002.mp3",
+                    },
+                )
+                self.assertEqual(
+                    anki_package.read(
+                        next(index for index, name in media_map.items()
+                             if name == "hsk4_SB_B_audio-11-2-line-001.mp3")
+                    ),
+                    archive.read("hsk4_SB_B_audio-11-2-line-001.mp3"),
+                )
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    collection_path = Path(temp_dir) / "collection.anki2"
+                    collection_path.write_bytes(anki_package.read("collection.anki2"))
+                    collection = sqlite3.connect(collection_path)
+                    try:
+                        models = json.loads(
+                            collection.execute("SELECT models FROM col").fetchone()[0]
+                        )
+                        model = next(
+                            (model_id, model)
+                            for model_id, model in models.items()
+                            if model["name"] == "Chinese (Sentence)"
+                        )
+                        self.assertEqual(int(model[0]), 1582785802209)
+                        model = model[1]
+                        field_names = [field["name"] for field in model["flds"]]
+                        self.assertEqual(
+                            field_names,
+                            [
+                                "Hanzi",
+                                "Reading",
+                                "Meaning",
+                                "Ruby",
+                                "Sound",
+                                "Q1",
+                                "Q2",
+                                "isProduction",
+                                "Image",
+                                "Gloss",
+                                "Literal",
+                                "Notes",
+                                "Word",
+                                "english",
+                                "Q1 Word",
+                                "Q1 Ruby",
+                                "Q1 Def",
+                                "Q2 Word",
+                                "Q2 Ruby",
+                                "Q2 Def",
+                            ],
+                        )
+                        notes = collection.execute("SELECT flds FROM notes").fetchall()
+                        self.assertEqual(len(notes), 2)
+                        note_fields = [
+                            dict(zip(field_names, note[0].split("\x1f")))
+                            for note in notes
+                        ]
+                        first_note = next(fields for fields in note_fields if fields["Hanzi"] == "你好。")
+                        self.assertEqual(first_note["Reading"], '<span class="tone3">nǐ</span>')
+                        self.assertEqual(first_note["Meaning"], "Hello.")
+                        self.assertEqual(first_note["Ruby"], "<ruby>你<rt>nǐ</rt></ruby>")
+                        self.assertEqual(
+                            first_note["Sound"],
+                            "[sound:hsk4_SB_B_audio-11-2-line-001.mp3]",
+                        )
+                        self.assertEqual(first_note["Q1"], "<b>你好</b>。")
+                        self.assertEqual(first_note["Word"], "你好")
+                        self.assertEqual(first_note["english"], "❖ you")
+                        self.assertEqual(first_note["Q1 Word"], "你好")
+                        self.assertEqual(first_note["Q1 Ruby"], "<ruby>你<rt>nǐ</rt></ruby>")
+                        self.assertEqual(first_note["Q1 Def"], "hello<hr>you")
+                        self.assertEqual(first_note["Q2"], "")
+                        second_note = next(fields for fields in note_fields if fields["Hanzi"] == "再见。")
+                        self.assertEqual(second_note["Q1"], "再见。")
+                        self.assertEqual(collection.execute("SELECT COUNT(*) FROM cards").fetchone()[0], 4)
+                    finally:
+                        collection.close()
             csv_text = archive.read("dialogue.csv").decode("utf-8-sig")
             csv_header = csv_text.splitlines()[0]
             self.assertIn("Word,WordDef,WordRuby", csv_header)
@@ -302,6 +402,7 @@ class DialogueAppTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
             self.assertIn("11-2.txt", archive.namelist())
             self.assertNotIn("11-2-vocab.txt", archive.namelist())
+            self.assertIn("11-2.apkg", archive.namelist())
 
 
 if __name__ == "__main__":
