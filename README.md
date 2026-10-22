@@ -39,7 +39,7 @@ This application includes Chinese Support 3 code, licensed under GNU GPL version
 
 ## Tests
 
-The project uses Python's built-in `unittest` framework. In VS Code, select the Python environment where the project dependencies are installed with **Python: Select Interpreter**, then open the Testing sidebar and choose **Refresh Tests** if discovery does not start automatically. Workspace settings enable unittest discovery for `test_*.py` files in `tests`.
+The project uses Python's built-in `unittest` framework. The `tests` package is configured for VS Code to discover individual test cases. In VS Code, select the Python environment where the project dependencies are installed with **Python: Select Interpreter**, then open the Testing sidebar and choose **Refresh Tests** if discovery does not start automatically. Workspace settings enable unittest discovery for `test_*.py` files in `tests`.
 
 ```powershell
 python -m unittest discover -s tests
